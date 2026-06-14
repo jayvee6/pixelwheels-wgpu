@@ -111,10 +111,12 @@ function buildRoster(chosenIdx: number): RacerConfig[] {
 let ROSTER: RacerConfig[] = buildRoster(0); // default; overwritten after menu
 
 // ---- Title / Car + Track Selection Menu ----
-function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ carIdx: number; trackIdx: number }> {
+function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ carIdx: number; trackIdx: number; difficulty: "easy" | "medium" | "hard"; laps: number }> {
   return new Promise((resolve) => {
     let selected = initialCarIdx;
     let selectedTrack = initialTrackIdx;
+    let selectedDiff: "easy" | "medium" | "hard" = "medium";
+    let selectedLaps = 3;
 
     const overlay = document.createElement("div");
     overlay.style.cssText = [
@@ -180,6 +182,100 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
     function refreshTrackBtns() {
       trackBtns.forEach((b, bi) => {
         const active = selectedTrack === bi;
+        b.style.border = `2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`;
+        b.style.background = active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)";
+        b.style.color = active ? "#FFD700" : "#888";
+      });
+    }
+
+    // Difficulty selection
+    const diffSectionLabel = document.createElement("div");
+    diffSectionLabel.textContent = "DIFFICULTY";
+    diffSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+
+    const diffRow = document.createElement("div");
+    diffRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;justify-content:center;";
+
+    const DIFF_OPTIONS: Array<{ id: "easy" | "medium" | "hard"; label: string }> = [
+      { id: "easy",   label: "Easy" },
+      { id: "medium", label: "Medium" },
+      { id: "hard",   label: "Hard" },
+    ];
+
+    function makeDiffBtn(opt: typeof DIFF_OPTIONS[number]): HTMLButtonElement {
+      const db = document.createElement("button");
+      const updateDiffStyle = () => {
+        const active = selectedDiff === opt.id;
+        db.style.cssText = [
+          "font-family:monospace", "font-size:.85rem", "font-weight:bold",
+          "letter-spacing:.1em", "cursor:pointer", "padding:.45rem 1.4rem",
+          "border-radius:8px",
+          `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
+          `background:${active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)"}`,
+          `color:${active ? "#FFD700" : "#888"}`,
+          "transition:border 0.12s,background 0.12s,color 0.12s",
+        ].join(";");
+      };
+      updateDiffStyle();
+      db.textContent = opt.label;
+      db.addEventListener("click", () => {
+        selectedDiff = opt.id;
+        refreshDiffBtns();
+      });
+      (db as HTMLButtonElement & { _updateStyle: () => void })._updateStyle = updateDiffStyle;
+      return db;
+    }
+    const diffBtns = DIFF_OPTIONS.map((o) => makeDiffBtn(o));
+    diffBtns.forEach((b) => diffRow.appendChild(b));
+
+    function refreshDiffBtns() {
+      diffBtns.forEach((b, bi) => {
+        const active = selectedDiff === DIFF_OPTIONS[bi].id;
+        b.style.border = `2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`;
+        b.style.background = active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)";
+        b.style.color = active ? "#FFD700" : "#888";
+      });
+    }
+
+    // Lap count selection
+    const lapSectionLabel = document.createElement("div");
+    lapSectionLabel.textContent = "LAPS";
+    lapSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+
+    const lapRow = document.createElement("div");
+    lapRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;justify-content:center;";
+
+    const LAP_OPTIONS = [1, 3, 5];
+
+    function makeLapBtn(count: number): HTMLButtonElement {
+      const lb = document.createElement("button");
+      const updateLapStyle = () => {
+        const active = selectedLaps === count;
+        lb.style.cssText = [
+          "font-family:monospace", "font-size:.85rem", "font-weight:bold",
+          "letter-spacing:.1em", "cursor:pointer", "padding:.45rem 1.4rem",
+          "border-radius:8px",
+          `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
+          `background:${active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)"}`,
+          `color:${active ? "#FFD700" : "#888"}`,
+          "transition:border 0.12s,background 0.12s,color 0.12s",
+        ].join(";");
+      };
+      updateLapStyle();
+      lb.textContent = `${count} Lap${count > 1 ? "s" : ""}`;
+      lb.addEventListener("click", () => {
+        selectedLaps = count;
+        refreshLapBtns();
+      });
+      (lb as HTMLButtonElement & { _updateStyle: () => void })._updateStyle = updateLapStyle;
+      return lb;
+    }
+    const lapBtns = LAP_OPTIONS.map((c) => makeLapBtn(c));
+    lapBtns.forEach((b) => lapRow.appendChild(b));
+
+    function refreshLapBtns() {
+      lapBtns.forEach((b, bi) => {
+        const active = selectedLaps === LAP_OPTIONS[bi];
         b.style.border = `2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`;
         b.style.background = active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)";
         b.style.color = active ? "#FFD700" : "#888";
@@ -272,7 +368,7 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
       overlay.style.transition = "opacity 0.28s";
       overlay.style.opacity = "0";
       setTimeout(() => overlay.remove(), 290);
-      resolve({ carIdx: selected, trackIdx: selectedTrack });
+      resolve({ carIdx: selected, trackIdx: selectedTrack, difficulty: selectedDiff, laps: selectedLaps });
     }
 
     btn.addEventListener("click", confirm);
@@ -314,6 +410,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
     overlay.appendChild(subtitle);
     overlay.appendChild(trackSectionLabel);
     overlay.appendChild(trackRow);
+    overlay.appendChild(diffSectionLabel);
+    overlay.appendChild(diffRow);
+    overlay.appendChild(lapSectionLabel);
+    overlay.appendChild(lapRow);
     overlay.appendChild(carSectionLabel);
     overlay.appendChild(carRow);
     overlay.appendChild(btn);
@@ -334,6 +434,8 @@ async function main() {
   // Show menu unless URL already has both track + car (i.e. came from a T-key track switch)
   let selectedTrackIdx: number;
   let selectedCarIdx: number;
+  let selectedDifficulty: "easy" | "medium" | "hard" = "medium";
+  let selectedLaps = 3;
   if (urlParams.carIdx !== null) {
     // Skip menu — came from track switch, jump straight into race
     selectedTrackIdx = initialTrackIdx;
@@ -342,6 +444,8 @@ async function main() {
     const choice = await showMenu(initialTrackIdx, initialCarIdx);
     selectedTrackIdx = choice.trackIdx;
     selectedCarIdx = choice.carIdx;
+    selectedDifficulty = choice.difficulty;
+    selectedLaps = choice.laps;
   }
   ROSTER = buildRoster(selectedCarIdx);
 
@@ -625,12 +729,15 @@ async function main() {
   let race: Race;
   function buildRace() {
     const angle = startHeading();
+    const diffMult = selectedDifficulty === "easy" ? 0.72 : selectedDifficulty === "hard" ? 1.12 : 1.0;
     const racers: Racer[] = ROSTER.map((cfg, i) => {
       const def = vehiclesJson[cfg.defId];
       const pose = gridPose(i, angle);
       const vehicle = new Vehicle(world, def, pose.x, pose.y, pose.angle, GamePlay.maxDrivingForce, metaJson);
       vehicle.body.setUserData({ racer: i }); // tag for camera-shake contact listener
-      const lap = new LapTracker(lapTable);
+      // Apply difficulty scale to AI racers only
+      if (!cfg.player) vehicle.speedScale = diffMult;
+      const lap = new LapTracker(lapTable, selectedLaps);
       const racer: Racer = { name: cfg.name, vehicle, lap, isPlayer: !!cfg.player };
       if (cfg.player) racer.input = playerInput;
       return racer;
@@ -827,6 +934,34 @@ async function main() {
           prevDisrupted.add(i);
         } else {
           prevDisrupted.delete(i);
+        }
+
+        // Turbo flame: emit while any racer is boosting on a TURBO tile
+        if (r.vehicle.isBoosting) {
+          const snap = currSnap[i]?.body;
+          const wx = snap?.x ?? r.vehicle.pixelPos.x;
+          const wy = snap?.y ?? r.vehicle.pixelPos.y;
+          const [sx, sy] = worldToScreen(wx, wy, vpEarly, lw, lh);
+          const angle = currSnap[i]?.body.angle ?? r.vehicle.body.getAngle();
+          vfx.turboFlame(sx / devicePixelRatio, sy / devicePixelRatio, angle);
+        }
+      }
+
+      // Wheel dust: only for the player, when drifting on a non-road surface
+      {
+        const pVeh = player().vehicle;
+        const pVel = pVeh.body.getLinearVelocity();
+        const pAngle = pVeh.body.getAngle();
+        const pSpeed = Math.sqrt(pVel.x ** 2 + pVel.y ** 2);
+        const pFwdX = Math.cos(pAngle), pFwdY = Math.sin(pAngle);
+        const pFwdSpeed = pVel.x * pFwdX + pVel.y * pFwdY;
+        const pLateralSpeed = Math.sqrt(Math.max(0, pSpeed ** 2 - pFwdSpeed ** 2));
+        if (pVeh.groundMaterial !== "ROAD" && pLateralSpeed > 1.5) {
+          const snap = currSnap[0]?.body;
+          const wx = snap?.x ?? pVeh.pixelPos.x;
+          const wy = snap?.y ?? pVeh.pixelPos.y;
+          const [sx, sy] = worldToScreen(wx, wy, vpEarly, lw, lh);
+          vfx.wheelDust(sx / devicePixelRatio, sy / devicePixelRatio, pVeh.groundMaterial);
         }
       }
     }

@@ -111,6 +111,7 @@ export class Vehicle {
   accelerating = false;
   braking = false;
   speedLimiter = 1;  // 0..1 throttle scale (AI uses this to hold back when leading)
+  speedScale = 1.0;  // difficulty multiplier: 1.0 = normal, <1 = easy AI, >1 = hard AI
   groundMaterial = "ROAD"; // material under the car body (set by the game each step)
   // render size in px: x extent (forward) = xml height, y extent (lateral) = xml width
   readonly renderW: number;
@@ -229,7 +230,7 @@ export class Vehicle {
     // applyPilotCommands
     let speedDelta = 0;
     if (running) {
-      if (this.accelerating) speedDelta = GamePlay.accelerationDelta * this.speedLimiter;
+      if (this.accelerating) speedDelta = GamePlay.accelerationDelta * this.speedLimiter * this.speedScale;
       if (this.braking) speedDelta -= GamePlay.brakingDelta;
     }
     const steerAngle = this.computeSteerAngle() * DEG2RAD;

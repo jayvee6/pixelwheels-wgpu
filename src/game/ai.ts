@@ -23,9 +23,9 @@ function wallBetween(world: World, ax: number, ay: number, bx: number, by: numbe
   return hit;
 }
 
-const MIN_NORMAL_SPEED = 2;       // m/s
-const MAX_BLOCKED_DURATION = 1;   // s below MIN_NORMAL_SPEED before reversing
-const MAX_REVERSE_DURATION = 0.9; // s — longer than upstream; gives the jeep room to swing clear of bank corners
+const MIN_NORMAL_SPEED = 8 / 3.6; // m/s — 8 km/h converted; below this = potentially stuck
+const MAX_BLOCKED_DURATION = 1.2; // s below MIN_NORMAL_SPEED before declaring stuck
+const MAX_REVERSE_DURATION = 0.8; // s of reverse to escape a wedge
 // Pulled from GamePlay so the eval sweep can search it (PARAM_aiLookAheadWaypoints)
 
 function normalizeAngleDeg(a: number): number {
@@ -69,7 +69,9 @@ export class AIPilot {
   private actBlocked(dt: number) {
     this.vehicle.accelerating = false;
     this.vehicle.braking = true;
-    this.vehicle.direction = 0;
+    // Alternate steer direction each half-second so the car wiggles free of symmetrical wedges
+    // instead of grinding straight back into the same wall.
+    this.vehicle.direction = this.reverseDuration % 1 < 0.5 ? 0.5 : -0.5;
     this.reverseDuration += dt;
     if (this.reverseDuration > MAX_REVERSE_DURATION) { this.state = "normal"; this.blockedDuration = 0; }
   }
