@@ -23,8 +23,24 @@ import { AudioEngine } from "./engine/audio.ts";
 import { ChiptunePlayer } from "./engine/music.ts";
 import { Minimap } from "./game/minimap.ts";
 import { ParticleSystem } from "./engine/particles.ts";
+import { CHAMPIONSHIPS, POINTS_TABLE } from "./game/championship.ts";
 
 import type { World } from "planck";
+
+interface ChampState {
+  champIdx: number;
+  raceIdx: number;
+  carIdx: number;
+  difficulty: "easy" | "medium" | "hard";
+  laps: number;
+  scores: number[];
+  racerNames: string[];
+}
+function getChampState(): ChampState | null {
+  try { const s = sessionStorage.getItem("pwChamp"); return s ? JSON.parse(s) as ChampState : null; } catch { return null; }
+}
+function saveChampState(s: ChampState) { sessionStorage.setItem("pwChamp", JSON.stringify(s)); }
+function clearChampState() { sessionStorage.removeItem("pwChamp"); }
 
 const canvas = document.getElementById("gpu") as HTMLCanvasElement;
 const hud = document.getElementById("hud") as HTMLDivElement;
@@ -111,12 +127,14 @@ function buildRoster(chosenIdx: number): RacerConfig[] {
 let ROSTER: RacerConfig[] = buildRoster(0); // default; overwritten after menu
 
 // ---- Title / Car + Track Selection Menu ----
-function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ carIdx: number; trackIdx: number; difficulty: "easy" | "medium" | "hard"; laps: number }> {
+function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mode: "quick" | "championship"; carIdx: number; trackIdx: number; champIdx: number; difficulty: "easy" | "medium" | "hard"; laps: number }> {
   return new Promise((resolve) => {
     let selected = initialCarIdx;
     let selectedTrack = initialTrackIdx;
     let selectedDiff: "easy" | "medium" | "hard" = "medium";
     let selectedLaps = 3;
+    let mode: "quick" | "championship" = "quick";
+    let selectedChamp = 0;
 
     const overlay = document.createElement("div");
     overlay.style.cssText = [
@@ -143,6 +161,90 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
       "font-size:1rem", "letter-spacing:.18em", "color:#aaa",
       "margin-bottom:1.6rem",
     ].join(";");
+
+    // Mode selector row
+    const modeSectionLabel = document.createElement("div");
+    modeSectionLabel.textContent = "MODE";
+    modeSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+
+    const modeRow = document.createElement("div");
+    modeRow.style.cssText = "display:flex;gap:.6rem;margin-bottom:1.4rem;justify-content:center;";
+
+    const MODE_OPTS = [
+      { id: "quick" as const, label: "QUICK RACE" },
+      { id: "championship" as const, label: "CHAMPIONSHIP" },
+    ];
+    const modeBtns = MODE_OPTS.map((opt) => {
+      const b = document.createElement("button");
+      const updateStyle = () => {
+        const active = mode === opt.id;
+        b.style.cssText = [
+          "font-family:monospace","font-size:.85rem","font-weight:bold",
+          "letter-spacing:.1em","cursor:pointer","padding:.45rem 1.6rem",
+          "border-radius:8px",
+          `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
+          `background:${active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)"}`,
+          `color:${active ? "#FFD700" : "#888"}`,
+        ].join(";");
+      };
+      updateStyle();
+      b.textContent = opt.label;
+      b.addEventListener("click", () => {
+        mode = opt.id;
+        modeBtns.forEach((mb, mi) => {
+          const a = mode === MODE_OPTS[mi].id;
+          mb.style.border = `2px solid ${a ? "#FFD700" : "rgba(255,255,255,0.15)"}`;
+          mb.style.background = a ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)";
+          mb.style.color = a ? "#FFD700" : "#888";
+        });
+        champSection.style.display = mode === "championship" ? "flex" : "none";
+        trackSection.style.display = mode === "quick" ? "flex" : "none";
+      });
+      return b;
+    });
+    modeBtns.forEach((b) => modeRow.appendChild(b));
+
+    // Championship picker section (hidden by default)
+    const champSection = document.createElement("div");
+    champSection.style.cssText = "display:none;flex-direction:column;align-items:center;margin-bottom:1.4rem;gap:.6rem;";
+    const champLabel = document.createElement("div");
+    champLabel.textContent = "CHAMPIONSHIP";
+    champLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
+    const champRow = document.createElement("div");
+    champRow.style.cssText = "display:flex;gap:.6rem;flex-wrap:wrap;justify-content:center;";
+    const champBtns = CHAMPIONSHIPS.map((ch, ci) => {
+      const b = document.createElement("button");
+      const updateStyle = () => {
+        const active = selectedChamp === ci;
+        b.style.cssText = [
+          "font-family:monospace","font-size:.85rem","font-weight:bold",
+          "letter-spacing:.1em","cursor:pointer","padding:.45rem 1.6rem",
+          "border-radius:8px",
+          `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.15)"}`,
+          `background:${active ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)"}`,
+          `color:${active ? "#FFD700" : "#888"}`,
+        ].join(";");
+      };
+      updateStyle();
+      b.textContent = `${ch.emoji} ${ch.name}`;
+      b.addEventListener("click", () => {
+        selectedChamp = ci;
+        champBtns.forEach((cb, cbi) => {
+          const a = selectedChamp === cbi;
+          cb.style.border = `2px solid ${a ? "#FFD700" : "rgba(255,255,255,0.15)"}`;
+          cb.style.background = a ? "rgba(255,215,0,0.13)" : "rgba(255,255,255,0.04)";
+          cb.style.color = a ? "#FFD700" : "#888";
+        });
+      });
+      return b;
+    });
+    champBtns.forEach((b) => champRow.appendChild(b));
+    champSection.appendChild(champLabel);
+    champSection.appendChild(champRow);
+
+    // Wrap track section in a div so we can hide it in championship mode
+    const trackSection = document.createElement("div");
+    trackSection.style.cssText = "display:flex;flex-direction:column;align-items:center;";
 
     // Track selection
     const trackSectionLabel = document.createElement("div");
@@ -368,7 +470,7 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
       overlay.style.transition = "opacity 0.28s";
       overlay.style.opacity = "0";
       setTimeout(() => overlay.remove(), 290);
-      resolve({ carIdx: selected, trackIdx: selectedTrack, difficulty: selectedDiff, laps: selectedLaps });
+      resolve({ mode, carIdx: selected, trackIdx: selectedTrack, champIdx: selectedChamp, difficulty: selectedDiff, laps: selectedLaps });
     }
 
     btn.addEventListener("click", confirm);
@@ -406,10 +508,15 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
       "margin-top:1rem",
     ].join(";");
 
+    trackSection.appendChild(trackSectionLabel);
+    trackSection.appendChild(trackRow);
+
     overlay.appendChild(title);
     overlay.appendChild(subtitle);
-    overlay.appendChild(trackSectionLabel);
-    overlay.appendChild(trackRow);
+    overlay.appendChild(modeSectionLabel);
+    overlay.appendChild(modeRow);
+    overlay.appendChild(champSection);
+    overlay.appendChild(trackSection);
     overlay.appendChild(diffSectionLabel);
     overlay.appendChild(diffRow);
     overlay.appendChild(lapSectionLabel);
@@ -436,8 +543,21 @@ async function main() {
   let selectedCarIdx: number;
   let selectedDifficulty: "easy" | "medium" | "hard" = "medium";
   let selectedLaps = 3;
-  if (urlParams.carIdx !== null) {
-    // Skip menu — came from track switch, jump straight into race
+  let activeChampState: ChampState | null = null;
+
+  // Championship mode: read persisted state from sessionStorage
+  const champState = getChampState();
+
+  if (champState) {
+    // Resumed mid-championship — skip menu, use saved settings
+    selectedTrackIdx = TRACK_OPTIONS.findIndex((t) => t.name === CHAMPIONSHIPS[champState.champIdx].tracks[champState.raceIdx]);
+    if (selectedTrackIdx < 0) selectedTrackIdx = 0;
+    selectedCarIdx = champState.carIdx;
+    selectedDifficulty = champState.difficulty;
+    selectedLaps = champState.laps;
+    activeChampState = champState;
+  } else if (urlParams.carIdx !== null) {
+    // Track-switch shortcut (T key from HUD)
     selectedTrackIdx = initialTrackIdx;
     selectedCarIdx = initialCarIdx;
   } else {
@@ -446,8 +566,35 @@ async function main() {
     selectedCarIdx = choice.carIdx;
     selectedDifficulty = choice.difficulty;
     selectedLaps = choice.laps;
+    if (choice.mode === "championship") {
+      // Kick off championship: save state and reload to race 0
+      const def = CHAMPIONSHIPS[choice.champIdx];
+      const initialChampState: ChampState = {
+        champIdx: choice.champIdx,
+        raceIdx: 0,
+        carIdx: choice.carIdx,
+        difficulty: choice.difficulty,
+        laps: choice.laps,
+        scores: [0, 0, 0, 0],
+        racerNames: [], // will be populated by buildRoster
+      };
+      saveChampState(initialChampState);
+      // Redirect to the first track of this championship
+      const firstTrack = def.tracks[0];
+      const firstTrackIdx = TRACK_OPTIONS.findIndex((t) => t.name === firstTrack);
+      selectedTrackIdx = firstTrackIdx >= 0 ? firstTrackIdx : 0;
+      selectedCarIdx = choice.carIdx;
+      selectedDifficulty = choice.difficulty;
+      selectedLaps = choice.laps;
+      activeChampState = { ...initialChampState };
+    }
   }
   ROSTER = buildRoster(selectedCarIdx);
+  // Update racerNames in champState now that ROSTER is built
+  if (activeChampState) {
+    activeChampState.racerNames = ROSTER.map((r) => r.name);
+    saveChampState(activeChampState);
+  }
 
   const trackName: TrackName = TRACK_OPTIONS[selectedTrackIdx].name;
 
@@ -838,7 +985,10 @@ async function main() {
     // Space / B — fire held bonus (only while running)
     if ((e.key === " " || e.key.toLowerCase() === "b") && race.state === "running") {
       e.preventDefault();
+      const wasHeld = race.bonusManager?.heldBonus(0) ?? null;
       race.firePlayerBonus();
+      if (wasHeld === "GUN") audio.shoot();
+      else if (wasHeld === "MINE") audio.boom();
     }
   });
 
@@ -886,6 +1036,7 @@ async function main() {
   let finishShown = false;
   let wrongWayTimer = 0;
   let paused = false;
+  let prevHeldBonus: string | null = null;
   // music playback state
   let musicStarted = false;
   let prevRaceDistance = 0;
@@ -1004,6 +1155,13 @@ async function main() {
 
     // position-change + lap-complete notifications
     if (race.state === "running") {
+      // Detect bonus pickup onset
+      const curHeldBonus = race.bonusManager?.heldBonus(0) ?? null;
+      if (prevHeldBonus === null && curHeldBonus !== null) {
+        audio.pickup();
+      }
+      prevHeldBonus = curHeldBonus;
+
       const curPos = race.positionOf(player());
       if (curPos !== lastPos) {
         posFlashTimer = 2.5;
@@ -1224,6 +1382,9 @@ async function main() {
       }
     }
     minimap.update(race.racers.map((r) => ({ ...r.vehicle.pixelPos, angle: r.vehicle.angle, isPlayer: r.isPlayer, finished: r.lap.finished, position: race.positionOf(r) })));
+    if (race.bonusManager) {
+      minimap.setSpots(race.bonusManager.spots.map((s) => ({ x: s.x, y: s.y, cooldown: s.cooldown })));
+    }
 
     // --- floating position labels above cars ---
     {
@@ -1270,6 +1431,92 @@ async function main() {
     // --- finish-screen overlay (fades in once when race ends) ---
     if (race.state === "finished" && !finishShown) {
       finishShown = true;
+      if (activeChampState) {
+        // --- championship handling ---
+        const order = race.standings();
+        // finishOrderByRacerIdx[pos] = racer index finishing at that position
+        const finishOrderByRacerIdx = order.map((r) => race.racers.indexOf(r));
+        const newScores = [...activeChampState.scores];
+        finishOrderByRacerIdx.forEach((racerIdx, pos) => {
+          if (racerIdx >= 0) newScores[racerIdx] = (newScores[racerIdx] ?? 0) + (POINTS_TABLE[pos] ?? 1);
+        });
+        const champDef = CHAMPIONSHIPS[activeChampState.champIdx];
+        const isLastRace = activeChampState.raceIdx + 1 >= champDef.tracks.length;
+        const racerNames = activeChampState.racerNames;
+
+        // Build sorted standings for display
+        const standings = racerNames.map((name, i) => ({ name, score: newScores[i], isPlayer: i === 0 }))
+          .sort((a, b) => b.score - a.score);
+        const medalColors = ["#FFD700", "#C0C0C0", "#CD7F32", "#888"];
+        const raceLabel = `RACE ${activeChampState.raceIdx + 1} / ${champDef.tracks.length}`;
+        const trackLabel = TRACK_OPTIONS.find((t) => t.name === champDef.tracks[activeChampState!.raceIdx]);
+
+        finishOverlayEl.innerHTML = `
+          <div style="font-size:.75rem;letter-spacing:.35em;color:#666;margin-bottom:.3rem">${champDef.emoji} ${champDef.name.toUpperCase()} — ${raceLabel}</div>
+          <div style="font-size:.9rem;color:#888;margin-bottom:.9rem;letter-spacing:.1em">${trackLabel?.emoji ?? ""} ${trackLabel?.label ?? ""} complete</div>
+          <div style="font-size:1.4rem;color:#FFD700;font-weight:900;letter-spacing:.15em;margin-bottom:.8rem">CHAMPIONSHIP STANDINGS</div>
+          <div style="display:flex;flex-direction:column;gap:.5rem;min-width:320px">
+            ${standings.map((s, i) => `
+              <div style="display:flex;align-items:center;gap:1rem;padding:.55rem 1.1rem;
+                background:rgba(255,255,255,${i === 0 ? "0.14" : s.isPlayer ? "0.12" : "0.05"});
+                border-radius:8px;border-left:3px solid ${medalColors[i] ?? "#555"}">
+                <span style="color:${medalColors[i] ?? "#888"};font-weight:900;min-width:1.8rem">${i + 1}.</span>
+                <span style="flex:1;color:${s.isPlayer ? "#FFD700" : "#ccc"};font-weight:${s.isPlayer ? "bold" : "normal"}">${s.name}</span>
+                <span style="color:#FFD700;font-weight:bold;min-width:3rem;text-align:right">${s.score} pts</span>
+              </div>`).join("")}
+          </div>
+        `;
+
+        const btnCss = [
+          "font-family:monospace","font-size:1.05rem","font-weight:bold",
+          "letter-spacing:.15em","cursor:pointer",
+          "padding:.65rem 2.2rem","margin:.35rem",
+          "border-radius:8px","border:2px solid #FFD700",
+          "background:rgba(255,215,0,0.1)","color:#FFD700",
+        ].join(";");
+        const btnRow = document.createElement("div");
+        btnRow.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;margin-top:1.2rem;";
+
+        if (isLastRace) {
+          // Championship complete — show champion
+          const champion = standings[0];
+          const champEl = document.createElement("div");
+          champEl.style.cssText = "font-size:1.5rem;color:#FFD700;font-weight:900;letter-spacing:.12em;margin:1rem 0 .5rem;text-shadow:0 0 20px #fa0;";
+          champEl.textContent = `🏆 CHAMPION: ${champion.name}`;
+          finishOverlayEl.insertBefore(champEl, finishOverlayEl.lastChild);
+
+          const menuBtn = document.createElement("button");
+          menuBtn.textContent = "⌂  MAIN MENU";
+          menuBtn.style.cssText = btnCss;
+          menuBtn.addEventListener("click", () => { clearChampState(); location.href = location.pathname; });
+          btnRow.appendChild(menuBtn);
+        } else {
+          // Save updated state and load next race
+          const updatedState: ChampState = {
+            ...activeChampState,
+            raceIdx: activeChampState.raceIdx + 1,
+            scores: newScores,
+            racerNames,
+          };
+          const nextRaceBtn = document.createElement("button");
+          nextRaceBtn.textContent = "▶  NEXT RACE";
+          nextRaceBtn.style.cssText = btnCss;
+          nextRaceBtn.addEventListener("click", () => {
+            saveChampState(updatedState);
+            location.href = location.pathname; // reload; champState drives which track loads
+          });
+          const quitChampBtn = document.createElement("button");
+          quitChampBtn.textContent = "✕  QUIT";
+          quitChampBtn.style.cssText = btnCss;
+          quitChampBtn.addEventListener("click", () => { clearChampState(); location.href = location.pathname; });
+          btnRow.appendChild(nextRaceBtn);
+          btnRow.appendChild(quitChampBtn);
+        }
+        finishOverlayEl.appendChild(btnRow);
+        finishOverlayEl.style.opacity = "1";
+        finishOverlayEl.style.pointerEvents = "auto";
+        // --- end championship handling ---
+      } else {
       const order = race.standings();
       const playerFinishPos = order.findIndex((r) => r.isPlayer) + 1;
       const playerWon = playerFinishPos === 1;
@@ -1339,6 +1586,7 @@ async function main() {
 
       finishOverlayEl.style.opacity = "1";
       finishOverlayEl.style.pointerEvents = "auto";
+      } // end else (quick race)
     }
 
     requestAnimationFrame(frame);

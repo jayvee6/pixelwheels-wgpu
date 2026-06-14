@@ -90,6 +90,12 @@ export class Minimap {
     return [this.ox + wx * this.scale, this.oy + wy * this.scale];
   }
 
+  private _spots: Array<{ x: number; y: number; cooldown: number }> = [];
+
+  setSpots(spots: Array<{ x: number; y: number; cooldown: number }>) {
+    this._spots = spots;
+  }
+
   update(racers: Array<{ x: number; y: number; angle: number; isPlayer: boolean; finished: boolean; position: number }>) {
     const ctx = this.ctx;
     const px = this.canvas.width;
@@ -127,6 +133,19 @@ export class Minimap {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(`P${r.position}`, mx, my + arrowLen * 0.85);
+    }
+
+    // Bonus spot dots
+    for (const spot of this._spots) {
+      const [mx, my] = this._mm(spot.x, spot.y);
+      const available = spot.cooldown <= 0;
+      const pulse = available ? 0.6 + 0.4 * Math.sin(Date.now() / 300) : 0.3;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = available ? "#FFD700" : "#888";
+      ctx.beginPath();
+      ctx.arc(mx, my, (available ? 3 : 2) * this.dpr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
   }
 

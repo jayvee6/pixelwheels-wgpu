@@ -297,4 +297,73 @@ export class AudioEngine {
       osc.onended = () => { osc.disconnect(); g.disconnect(); };
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Gun fire — "pew" laser
+  // -------------------------------------------------------------------------
+
+  /** Short descending square-wave sweep: 900 Hz → 400 Hz over 0.06 s. */
+  shoot() {
+    if (!this.ctx || !this._masterBus) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "square";
+    // Frequency sweep: 900Hz → 400Hz over 0.06s (descending "pew")
+    osc.frequency.setValueAtTime(900, t);
+    osc.frequency.exponentialRampToValueAtTime(400, t + 0.06);
+    g.gain.setValueAtTime(0.25, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.connect(g);
+    g.connect(this._masterBus);
+    osc.start(t);
+    osc.stop(t + 0.1);
+    osc.onended = () => { osc.disconnect(); g.disconnect(); };
+  }
+
+  // -------------------------------------------------------------------------
+  // Mine explosion — low thud + noise burst
+  // -------------------------------------------------------------------------
+
+  /** Low sine body thud (120→30 Hz) plus a filtered noise burst. */
+  boom() {
+    if (!this.ctx || !this._masterBus) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // Low body thud (sine sweep 120→30Hz)
+    const body = ctx.createOscillator();
+    const bodyGain = ctx.createGain();
+    body.type = "sine";
+    body.frequency.setValueAtTime(120, t);
+    body.frequency.exponentialRampToValueAtTime(30, t + 0.25);
+    bodyGain.gain.setValueAtTime(0.5, t);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    body.connect(bodyGain);
+    bodyGain.connect(this._masterBus);
+    body.start(t);
+    body.stop(t + 0.3);
+    body.onended = () => { body.disconnect(); bodyGain.disconnect(); };
+
+    // Noise burst through lowpass
+    const bufLen = Math.ceil(ctx.sampleRate * 0.25);
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 400;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.4, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    noise.connect(lp);
+    lp.connect(noiseGain);
+    noiseGain.connect(this._masterBus);
+    noise.start(t);
+    noise.onended = () => { noise.disconnect(); lp.disconnect(); noiseGain.disconnect(); };
+  }
 }
