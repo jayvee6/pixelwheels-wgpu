@@ -436,6 +436,39 @@ async function main() {
   ].join(";");
   document.body.appendChild(finishOverlayEl);
 
+  // --- pause overlay (Escape key toggles while running) ---
+  const pauseOverlay = document.createElement("div");
+  pauseOverlay.style.cssText = [
+    "position:fixed", "inset:0", "z-index:40",
+    "background:rgba(8,12,24,0.88)",
+    "display:none", "flex-direction:column",
+    "align-items:center", "justify-content:center",
+    "font-family:monospace", "color:#eee",
+  ].join(";");
+
+  const pauseTitle = document.createElement("div");
+  pauseTitle.textContent = "PAUSED";
+  pauseTitle.style.cssText = "font-size:3rem;font-weight:900;color:#FFD700;letter-spacing:.3em;margin-bottom:2rem;text-shadow:0 0 24px rgba(255,170,0,0.6);";
+
+  function makePauseBtn(label: string, onClick: () => void): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.style.cssText = [
+      "font-family:monospace", "font-size:1.1rem", "font-weight:bold",
+      "letter-spacing:.15em", "cursor:pointer",
+      "padding:.7rem 2.5rem", "margin:.4rem",
+      "border-radius:8px", "border:2px solid #FFD700",
+      "background:rgba(255,215,0,0.1)", "color:#FFD700",
+    ].join(";");
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  const resumeBtn = makePauseBtn("▶  RESUME", () => { paused = false; pauseOverlay.style.display = "none"; });
+  const quitBtn   = makePauseBtn("✕  QUIT TO MENU", () => { location.href = location.pathname; });
+  pauseOverlay.append(pauseTitle, resumeBtn, quitBtn);
+  document.body.appendChild(pauseOverlay);
+
   // --- mute toggle button ---
   const muteBtn = document.createElement("div");
   muteBtn.style.cssText = [
@@ -604,6 +637,13 @@ async function main() {
       }
     }
     race = new Race(racers, track);
+    // Initialize bonus manager from map BonusSpots (ellipses — center = x + w/2, y + h/2)
+    const rawSpots = track.objects.BonusSpots ?? [];
+    const bonusSpotDefs = rawSpots.map((s) => ({
+      x: s.x + (s.width ?? 0) / 2,
+      y: s.y + (s.height ?? 0) / 2,
+    }));
+    race.initBonusManager(bonusSpotDefs, world);
     const p = racers[0].vehicle.pixelPos;
     cam.cx = p.x; cam.cy = p.y;
   }
@@ -628,6 +668,8 @@ async function main() {
     finishShown = false;
     finishOverlayEl.style.opacity = "0";
     finishOverlayEl.style.pointerEvents = "none";
+    paused = false;
+    pauseOverlay.style.display = "none";
     wrongWayTimer = 0;
     wrongWayEl.style.opacity = "0";
     prevRaceDistance = 0;
@@ -675,6 +717,16 @@ async function main() {
       const nextTrackIdx = (selectedTrackIdx + 1) % TRACK_OPTIONS.length;
       switchTrack(nextTrackIdx, selectedCarIdx);
     }
+    // Escape — toggle pause while race is running
+    if (e.key === "Escape" && race.state === "running") {
+      paused = !paused;
+      pauseOverlay.style.display = paused ? "flex" : "none";
+    }
+    // Space / B — fire held bonus (only while running)
+    if ((e.key === " " || e.key.toLowerCase() === "b") && race.state === "running") {
+      e.preventDefault();
+      race.firePlayerBonus();
+    }
   });
 
   const player = () => race.racers[0];
@@ -713,6 +765,7 @@ async function main() {
   // finish overlay + wrong-way state
   let finishShown = false;
   let wrongWayTimer = 0;
+  let paused = false;
   // music playback state
   let musicStarted = false;
   let prevRaceDistance = 0;
@@ -727,6 +780,7 @@ async function main() {
   function frame(now: number) {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    if (paused) { requestAnimationFrame(frame); return; }
     stepper.advance(dt);
     const alpha = stepper.alpha;
     updateCamera(dt);
@@ -1032,41 +1086,68 @@ async function main() {
       const playerFinishPos = order.findIndex((r) => r.isPlayer) + 1;
       const playerWon = playerFinishPos === 1;
       const medals = ["1st", "2nd", "3rd", "4th"];
-      const colors = ["#FFD700", "#C0C0C0", "#CD7F32", "#888"];
+      const medalColors = ["#FFD700", "#C0C0C0", "#CD7F32", "#888"];
       const placeLabel = ["", "2nd place", "3rd place", "4th place"][playerFinishPos - 1] ?? "";
+
+      function fmtTime(s: number): string {
+        const m = Math.floor(s / 60);
+        const sec = (s % 60).toFixed(2).padStart(5, "0");
+        return `${m}:${sec}`;
+      }
+
       const headline = playerWon
-        ? `<div style="font-size:3.4rem;color:#FFD700;text-shadow:0 0 32px #fa0,0 0 8px #fff;margin-bottom:.3rem;letter-spacing:.12em;animation:none">YOU WIN!</div>`
+        ? `<div style="font-size:3.4rem;color:#FFD700;text-shadow:0 0 32px #fa0,0 0 8px #fff;margin-bottom:.5rem;letter-spacing:.12em">YOU WIN!</div>`
         : `<div style="font-size:3.2rem;color:#4f4;text-shadow:0 0 28px #2d2;margin-bottom:.3rem;letter-spacing:.1em">FINISHED!</div>
-           <div style="font-size:1.1rem;color:#aaa;margin-bottom:1.4rem;letter-spacing:.06em">${placeLabel}</div>`;
+           <div style="font-size:1.1rem;color:#aaa;margin-bottom:1rem;letter-spacing:.06em">${placeLabel}</div>`;
+
       finishOverlayEl.innerHTML = `
+        <div style="font-size:.75rem;letter-spacing:.35em;color:#666;margin-bottom:.5rem">RACE COMPLETE</div>
         ${headline}
-        ${playerWon ? `<div style="font-size:1rem;color:#aaa;margin-bottom:1.6rem;letter-spacing:.05em">Race complete</div>` : ""}
-        <div style="display:flex;flex-direction:column;gap:.7rem;min-width:280px">
-          ${order.map((r, i) => `
-            <div style="display:flex;align-items:center;gap:1rem;padding:.55rem 1.2rem;
-              background:rgba(255,255,255,${r.isPlayer ? "0.13" : "0.06"});
-              border-radius:8px;border-left:3px solid ${colors[i]}">
-              <span style="color:${colors[i]};font-size:1rem;min-width:2.6rem">${medals[i]}</span>
-              <span style="color:${r.isPlayer ? "#FFD700" : "#ccc"};font-size:1rem;flex:1">${r.name}</span>
-              <span style="color:#999;font-size:.95rem">${r.lap.totalTime.toFixed(1)}s</span>
-            </div>`).join("")}
+        <div style="display:flex;flex-direction:column;gap:.6rem;min-width:320px;margin-top:.4rem">
+          ${order.map((r, i) => {
+            const isWinner = i === 0;
+            const bestLap = r.lap.bestLapTime;
+            const bestStr = bestLap < Infinity ? fmtTime(bestLap) : "—";
+            return `
+            <div style="display:flex;align-items:center;gap:1rem;padding:.6rem 1.2rem;
+              background:rgba(255,255,255,${isWinner ? "0.16" : r.isPlayer ? "0.13" : "0.06"});
+              border-radius:8px;border-left:3px solid ${medalColors[i]};
+              ${isWinner ? `box-shadow:0 0 12px rgba(255,215,0,0.18);` : ""}">
+              <span style="color:${medalColors[i]};font-size:${isWinner ? "1.15rem" : "1rem"};font-weight:${isWinner ? "900" : "bold"};min-width:2.8rem">${medals[i]}</span>
+              <span style="color:${isWinner ? "#FFD700" : r.isPlayer ? "#FFD700" : "#ccc"};font-size:${isWinner ? "1.15rem" : "1rem"};font-weight:${isWinner ? "900" : "normal"};flex:1;text-shadow:${isWinner ? "0 0 12px rgba(255,215,0,0.5)" : "none"}">${r.name}</span>
+              <span style="color:#888;font-size:.8rem;min-width:4rem;text-align:right" title="best lap">${bestStr}</span>
+              <span style="color:#999;font-size:.95rem;min-width:4rem;text-align:right">${r.lap.totalTime.toFixed(1)}s</span>
+            </div>`;
+          }).join("")}
         </div>
-        <div style="margin-top:1.8rem;color:#555;font-size:.85rem;letter-spacing:.05em">R to race again</div>
+        <div style="font-size:.65rem;color:#444;letter-spacing:.08em;margin-top:.5rem;text-align:right;min-width:320px;padding-right:.2rem">best lap · total time</div>
       `;
 
-      // Play Again button
-      const playAgainBtn = document.createElement("button");
-      playAgainBtn.textContent = "PLAY AGAIN";
-      playAgainBtn.style.cssText = [
-        "font-family:monospace", "font-size:1rem", "font-weight:900",
-        "letter-spacing:.18em", "cursor:pointer",
-        "padding:.5rem 2rem", "margin-top:.6rem",
-        "background:#FFD700", "color:#111",
-        "border:none", "border-radius:8px",
-        "box-shadow:0 0 18px rgba(255,215,0,0.4)",
+      // action buttons styled to match pause overlay
+      const btnCss = [
+        "font-family:monospace", "font-size:1.05rem", "font-weight:bold",
+        "letter-spacing:.15em", "cursor:pointer",
+        "padding:.65rem 2.2rem", "margin:.35rem",
+        "border-radius:8px", "border:2px solid #FFD700",
+        "background:rgba(255,215,0,0.1)", "color:#FFD700",
       ].join(";");
-      playAgainBtn.addEventListener("click", () => respawn());
-      finishOverlayEl.appendChild(playAgainBtn);
+
+      const btnRow = document.createElement("div");
+      btnRow.style.cssText = "display:flex;flex-wrap:wrap;justify-content:center;margin-top:1.4rem;";
+
+      const raceAgainBtn = document.createElement("button");
+      raceAgainBtn.textContent = "▶  RACE AGAIN";
+      raceAgainBtn.style.cssText = btnCss;
+      raceAgainBtn.addEventListener("click", () => respawn());
+
+      const menuBtn = document.createElement("button");
+      menuBtn.textContent = "⌂  MENU";
+      menuBtn.style.cssText = btnCss;
+      menuBtn.addEventListener("click", () => { location.href = location.pathname; });
+
+      btnRow.appendChild(raceAgainBtn);
+      btnRow.appendChild(menuBtn);
+      finishOverlayEl.appendChild(btnRow);
 
       finishOverlayEl.style.opacity = "1";
       finishOverlayEl.style.pointerEvents = "auto";
@@ -1094,9 +1175,15 @@ async function main() {
     const turboStr = pl.vehicle.isBoosting
       ? `<span style="color:#FFD700;font-weight:900;font-size:1.1rem;"> ⚡ TURBO</span>`
       : "";
+    // held bonus indicator
+    const heldBonus = race.bonusManager?.heldBonus(0) ?? null;
+    const BONUS_ICON: Record<string, string> = { TURBO: "⚡", GUN: "🔫", MINE: "💣" };
+    const bonusStr = heldBonus
+      ? ` <span style="color:#0f0;font-weight:bold"> [${BONUS_ICON[heldBonus] ?? heldBonus} SPACE]</span>`
+      : "";
     return (
       `<span style="font-size:1.4rem;color:#FFD700;font-weight:900">P${pos}</span>` +
-      `  Lap ${lap}  ${speed} km/h${best}${turboStr}<br>` +
+      `  Lap ${lap}  ${speed} km/h${best}${turboStr}${bonusStr}<br>` +
       `<span style="font-size:0.7rem;color:#666">${fpsStr}${trackLabel}</span>`
     );
   }

@@ -6,6 +6,8 @@ import type { LapTracker } from "./lap.ts";
 import type { AIPilot } from "./ai.ts";
 import type { GameInput } from "./input.ts";
 import { getMaterialAt, type TrackData } from "./track.ts";
+import { BonusManager } from "./bonus.ts";
+import type { World } from "planck";
 
 export interface Racer {
   name: string;
@@ -24,6 +26,7 @@ export class Race {
   state: RaceState = "countdown";
   countdown = COUNTDOWN_SECONDS;
   goTimer = 0; // seconds the "GO!" banner stays up after countdown hits 0
+  bonusManager: BonusManager | null = null;
 
   constructor(public racers: Racer[], private track: TrackData) {}
 
@@ -59,10 +62,25 @@ export class Race {
       r.lap.update(cp.x, cp.y, dt);
     }
 
+    // bonus system: advance spots, bullets, mines, and apply turbo
+    this.bonusManager?.step(dt, this.racers);
+
     // race ends when every player has finished
     if (this.state === "running" && this.racers.filter((r) => r.isPlayer).every((r) => r.lap.finished)) {
       this.state = "finished";
     }
+  }
+
+  /** Initialize the bonus manager from map spot definitions and the planck world. */
+  initBonusManager(spots: Array<{ x: number; y: number }>, world: World) {
+    this.bonusManager = new BonusManager(spots, this.racers.length, world);
+  }
+
+  /** Fire the player's held bonus (no-op if no bonus held or no bonus manager). */
+  firePlayerBonus() {
+    const playerIdx = this.racers.findIndex((r) => r.isPlayer);
+    if (playerIdx < 0 || !this.bonusManager) return;
+    this.bonusManager.fireBonus(playerIdx, this.racers);
   }
 
   /** Racers ordered by standing (1st = furthest). Finished racers rank by total time. */
