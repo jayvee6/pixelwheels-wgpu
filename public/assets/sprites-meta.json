@@ -1,0 +1,46 @@
+{
+  "vehicles/jeep": {
+    "w": 53,
+    "h": 34
+  },
+  "vehicles/police": {
+    "w": 56,
+    "h": 32
+  },
+  "vehicles/red": {
+    "w": 57,
+    "h": 32
+  },
+  "tires/HUGE-splash": {
+    "w": 35,
+    "h": 29
+  },
+  "tires/HUGE": {
+    "w": 27,
+    "h": 21
+  },
+  "tires/LARGE-splash": {
+    "w": 27,
+    "h": 23
+  },
+  "tires/LARGE": {
+    "w": 19,
+    "h": 15
+  },
+  "tires/NORMAL-splash": {
+    "w": 21,
+    "h": 19
+  },
+  "tires/NORMAL": {
+    "w": 13,
+    "h": 10
+  },
+  "tires/THIN-splash": {
+    "w": 21,
+    "h": 16
+  },
+  "tires/THIN": {
+    "w": 13,
+    "h": 7
+  }
+}

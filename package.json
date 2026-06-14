@@ -1,0 +1,28 @@
+{
+  "name": "pixelwheels-wgpu",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WebGPU port of Pixel Wheels (https://github.com/agateau/pixelwheels) — vertical slice",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "assets:img": "node tools/build-assets.mjs",
+    "assets:map": "node tools/build-map.mjs",
+    "assets:map:country": "MAP_NAME=country node tools/build-map.mjs",
+    "assets": "npm run assets:img && npm run assets:map && npm run assets:map:country",
+    "eval": "npx tsx tools/eval.ts",
+    "sweep": "node tools/sweep.mjs"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.40",
+    "fflate": "^0.8.2",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "planck": "^1.0.0"
+  }
+}

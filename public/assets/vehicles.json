@@ -1,0 +1,110 @@
+{
+  "jeep": {
+    "id": "jeep",
+    "name": "Jeep",
+    "speed": 1,
+    "width": 34,
+    "height": 53,
+    "image": "jeep",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 51,
+        "corner": 1,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 30,
+        "y": 44,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "LARGE"
+      },
+      {
+        "width": 30,
+        "y": 12,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "LARGE"
+      }
+    ]
+  },
+  "red": {
+    "id": "red",
+    "name": "Red Lightning",
+    "speed": 1,
+    "width": 30,
+    "height": 56,
+    "image": "red",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 56,
+        "corner": 3,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 26,
+        "y": 44,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 28,
+        "y": 12,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "police": {
+    "id": "police",
+    "name": "Highway Patrol",
+    "speed": 1,
+    "width": 30,
+    "height": 56,
+    "image": "police",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 54,
+        "corner": 1,
+        "x": null,
+        "y": 0
+      }
+    ],
+    "axles": [
+      {
+        "width": 24,
+        "y": 42,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 24,
+        "y": 12,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  }
+}
