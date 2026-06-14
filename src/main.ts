@@ -22,6 +22,7 @@ import { createTuningPanel } from "./game/tuning.ts";
 import { AudioEngine } from "./engine/audio.ts";
 import { ChiptunePlayer } from "./engine/music.ts";
 import { Minimap } from "./game/minimap.ts";
+import { ParticleSystem } from "./engine/particles.ts";
 
 import type { World } from "planck";
 
@@ -500,6 +501,11 @@ async function main() {
   resizeLabels();
   window.addEventListener("resize", resizeLabels);
 
+  // --- Canvas2D particle system (explosions, smoke, rescue fade) ---
+  const vfx = new ParticleSystem();
+  // Track which racers were disrupted last frame to detect the onset transition
+  const prevDisrupted = new Set<number>();
+
   // --- wrong-way indicator ---
   const wrongWayEl = document.createElement("div");
   wrongWayEl.style.cssText = [
@@ -731,6 +737,13 @@ async function main() {
 
   const player = () => race.racers[0];
 
+  /** Convert world pixel coords → label-canvas device pixel coords using the current VP matrix. */
+  function worldToScreen(wx: number, wy: number, vp: Float32Array, cw: number, ch: number): [number, number] {
+    const nx = vp[0] * wx + vp[4] * wy + vp[12];
+    const ny = vp[1] * wx + vp[5] * wy + vp[13];
+    return [(nx + 1) / 2 * cw, (1 - ny) / 2 * ch];
+  }
+
   function updateCamera(dt: number) {
     const W = canvas.width, H = canvas.height;
     const v = player().vehicle;
@@ -783,6 +796,41 @@ async function main() {
     if (paused) { requestAnimationFrame(frame); return; }
     stepper.advance(dt);
     const alpha = stepper.alpha;
+
+    // --- VFX particle system step + disruption/smoke trigger ---
+    vfx.step(dt);
+    if (race.state === "running") {
+      // Compute VP early so we can convert world→screen for particle spawn positions.
+      // (The full render VP is recomputed below after resizeToDisplay; use canvas dims as-is
+      // for the particle spawn since a 1-frame offset is imperceptible.)
+      const vpEarly = cam.viewProj(canvas.width, canvas.height);
+      const lw = labelsCanvas.width, lh = labelsCanvas.height;
+      for (let i = 0; i < race.racers.length; i++) {
+        const r = race.racers[i];
+        const wasDisrupted = prevDisrupted.has(i);
+        const nowDisrupted = r.vehicle.isDisrupted;
+        // Onset transition → explosion burst
+        if (!wasDisrupted && nowDisrupted) {
+          const snap = currSnap[i]?.body;
+          const wx = snap?.x ?? r.vehicle.pixelPos.x;
+          const wy = snap?.y ?? r.vehicle.pixelPos.y;
+          const [sx, sy] = worldToScreen(wx, wy, vpEarly, lw, lh);
+          vfx.explosion(sx / devicePixelRatio, sy / devicePixelRatio);
+        }
+        // Continuous smoke while disrupted
+        if (nowDisrupted) {
+          const snap = currSnap[i]?.body;
+          const wx = snap?.x ?? r.vehicle.pixelPos.x;
+          const wy = snap?.y ?? r.vehicle.pixelPos.y;
+          const [sx, sy] = worldToScreen(wx, wy, vpEarly, lw, lh);
+          vfx.smoke(sx / devicePixelRatio, sy / devicePixelRatio);
+          prevDisrupted.add(i);
+        } else {
+          prevDisrupted.delete(i);
+        }
+      }
+    }
+
     updateCamera(dt);
 
     // update audio each frame (engine pitch + squeal gate)
@@ -937,11 +985,17 @@ async function main() {
       // base tint from roster, then disruption flash (orange/red pulse)
       const baseTint = tintFor(cfg);
       let tintR = baseTint.r ?? 1, tintG = baseTint.g ?? 1, tintB = baseTint.b ?? 1;
+      let tintA = 1;
       if (r.vehicle.isDisrupted) {
         const flash = Math.sin(r.vehicle.disruptedTimer * 40) > 0;
         if (flash) { tintR = 1.0; tintG = 0.25; tintB = 0.1; }
+      } else if (r.vehicle.isRescuing) {
+        // Fade out + blue tint as rescue teleport progresses
+        const progress = r.vehicle.rescueTimer / r.vehicle.RESCUE_DURATION;
+        tintA = 0.3 + 0.7 * progress; // fades out toward 0.3 at rescue completion
+        tintR = 0.7; tintG = 0.8; tintB = 1.0;
       }
-      carsByDef[cfg.defId].push({ x: ix, y: iy, w: tex.width, h: tex.height, rot: ia, ...rectUV(0, 0, 1, 1), r: tintR, g: tintG, b: tintB });
+      carsByDef[cfg.defId].push({ x: ix, y: iy, w: tex.width, h: tex.height, rot: ia, ...rectUV(0, 0, 1, 1), r: tintR, g: tintG, b: tintB, a: tintA });
       if (tireTex) {
         for (let wi = 0; wi < r.vehicle.wheels.length; wi++) {
           const pw = prev.wheels[wi], cw = curr.wheels[wi];
@@ -1040,6 +1094,8 @@ async function main() {
     {
       const lw = labelsCanvas.width, lh = labelsCanvas.height;
       labelsCtx.clearRect(0, 0, lw, lh);
+      // Draw Canvas2D particle effects (explosions/smoke) on the same overlay, below the text labels
+      vfx.draw(labelsCtx, devicePixelRatio);
       const dpr = devicePixelRatio;
       for (let ri = 0; ri < race.racers.length; ri++) {
         const r = race.racers[ri];
@@ -1047,11 +1103,8 @@ async function main() {
         const psnap = prevSnap[ri].body, csnap = currSnap[ri].body;
         const px = psnap.x + (csnap.x - psnap.x) * alpha;
         const py = psnap.y + (csnap.y - psnap.y) * alpha;
-        // project world px → clip space → label-canvas device px
-        const cx = vp[0] * px + vp[4] * py + vp[12];
-        const cy = vp[1] * px + vp[5] * py + vp[13];
-        const sx = (cx + 1) / 2 * lw;
-        const sy = (1 - cy) / 2 * lh;
+        // project world px → label-canvas device px via shared helper
+        const [sx, sy] = worldToScreen(px, py, vp, lw, lh);
         const fontSize = 11 * dpr;
         labelsCtx.font = `bold ${fontSize}px monospace`;
         const label = `P${pos}`;

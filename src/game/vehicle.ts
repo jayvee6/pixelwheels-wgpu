@@ -118,6 +118,11 @@ export class Vehicle {
   // disruption state (wall hit at speed → temporary slowdown)
   disruptedTimer = 0; // seconds remaining in disrupted state
   readonly DISRUPTED_DURATION = 1.5;
+  // rescue state (vehicle fell into DEEP_WATER → freeze → teleport to last safe position)
+  lastSafePos = { x: 0, y: 0 }; // world pixels; updated each step when on safe ground
+  rescueTimer = 0;               // seconds until teleport completes
+  readonly RESCUE_DURATION = 1.8;
+  get isRescuing() { return this.rescueTimer > 0; }
 
   constructor(world: World, def: VehicleDef, x: number, y: number, angleRad: number, maxDrivingForce: number,
               tireSizes: Record<string, { w: number; h: number }>) {
@@ -190,8 +195,37 @@ export class Vehicle {
     return this.direction * steer;
   }
 
+  /** Trigger water rescue: freeze the body and start the rescue countdown. */
+  triggerRescue() {
+    if (this.isRescuing) return; // already rescuing
+    this.rescueTimer = this.RESCUE_DURATION;
+    this.body.setLinearVelocity(new Vec2(0, 0));
+    this.body.setAngularVelocity(0);
+  }
+
+  /** Record the current body position as the last safe landing spot (world pixels). */
+  markSafePosition() {
+    const p = this.body.getPosition();
+    this.lastSafePos.x = p.x / UNIT_FOR_PIXEL;
+    this.lastSafePos.y = p.y / UNIT_FOR_PIXEL;
+  }
+
   /** Vehicle.act — must be called once per fixed step, BEFORE world.step. running = race RUNNING state. */
   act(running: boolean) {
+    // --- water rescue: freeze + teleport back to last safe position ---
+    if (this.isRescuing) {
+      this.rescueTimer = Math.max(0, this.rescueTimer - BOX2D_DT);
+      this.body.setLinearVelocity(new Vec2(0, 0));
+      this.body.setAngularVelocity(0);
+      if (this.rescueTimer === 0) {
+        const sx = this.lastSafePos.x * UNIT_FOR_PIXEL;
+        const sy = this.lastSafePos.y * UNIT_FOR_PIXEL;
+        this.body.setPosition(new Vec2(sx, sy));
+        this.body.setLinearVelocity(new Vec2(0, 0));
+      }
+      return; // skip all other vehicle logic while rescuing
+    }
+
     // applyPilotCommands
     let speedDelta = 0;
     if (running) {

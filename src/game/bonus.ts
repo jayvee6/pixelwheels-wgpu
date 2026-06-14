@@ -237,4 +237,49 @@ export class BonusManager {
   heldBonus(racerIndex: number): BonusType | null {
     return this.racerBonuses[racerIndex]?.held ?? null;
   }
+
+  /** AI bonus firing: call once per step after step(). Player racers are skipped. */
+  aiStep(racers: Array<RacerRef & { isPlayer?: boolean }>) {
+    for (let i = 0; i < racers.length; i++) {
+      if (racers[i].isPlayer) continue; // skip player — they fire manually
+      const rb = this.racerBonuses[i];
+      if (!rb.isHolding) continue;
+
+      const myPos = racers[i].vehicle.pixelPos;
+      const myAngle = racers[i].vehicle.body.getAngle();
+      // forward direction vector
+      const fwdX = Math.sin(myAngle), fwdY = -Math.cos(myAngle);
+
+      if (rb.held === "TURBO") {
+        // Always fire turbo immediately
+        this.fireBonus(i, racers);
+      } else if (rb.held === "GUN") {
+        // Fire when a racer is within 200px ahead
+        for (let j = 0; j < racers.length; j++) {
+          if (j === i) continue;
+          const tPos = racers[j].vehicle.pixelPos;
+          const dx = tPos.x - myPos.x, dy = tPos.y - myPos.y;
+          const dot = dx * fwdX + dy * fwdY; // positive = ahead
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dot > 0 && dist < 200) {
+            this.fireBonus(i, racers);
+            break;
+          }
+        }
+      } else if (rb.held === "MINE") {
+        // Drop mine when a racer is within 100px behind
+        for (let j = 0; j < racers.length; j++) {
+          if (j === i) continue;
+          const tPos = racers[j].vehicle.pixelPos;
+          const dx = tPos.x - myPos.x, dy = tPos.y - myPos.y;
+          const dot = dx * fwdX + dy * fwdY; // negative = behind
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dot < 0 && dist < 100) {
+            this.fireBonus(i, racers);
+            break;
+          }
+        }
+      }
+    }
+  }
 }

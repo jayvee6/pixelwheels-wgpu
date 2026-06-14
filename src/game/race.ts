@@ -48,6 +48,12 @@ export class Race {
       const mat = getMaterialAt(this.track, cp.x, cp.y);
       r.vehicle.groundMaterial = mat;
       r.vehicle.setMaterialForWheels(mat);
+      if (mat !== "DEEP_WATER" && mat !== "AIR") {
+        r.vehicle.markSafePosition();
+      }
+      if (mat === "DEEP_WATER" && !r.vehicle.isRescuing) {
+        r.vehicle.triggerRescue();
+      }
 
       if (r.isPlayer && r.input) {
         const gi = r.input.sample();
@@ -64,6 +70,7 @@ export class Race {
 
     // bonus system: advance spots, bullets, mines, and apply turbo
     this.bonusManager?.step(dt, this.racers);
+    this.bonusManager?.aiStep(this.racers);
 
     // race ends when every player has finished
     if (this.state === "running" && this.racers.filter((r) => r.isPlayer).every((r) => r.lap.finished)) {
