@@ -49,13 +49,20 @@ for (let m; (m = layerRe.exec(tmx)); ) {
   const name = attr(head, "name");
   const encoding = attr(dataHead, "encoding");
   const compression = attr(dataHead, "compression");
-  if (encoding !== "base64") throw new Error(`layer ${name}: unexpected encoding ${encoding}`);
-  let bytes = Buffer.from(m[3].trim(), "base64");
-  if (compression === "zlib") bytes = inflateSync(bytes);
-  else if (compression) throw new Error(`layer ${name}: unsupported compression ${compression}`);
-  // Keep the raw 32-bit GID incl. Tiled flip flags (top 3 bits); the runtime decodes id + flips.
-  const gids = new Array(width * height);
-  for (let i = 0; i < width * height; i++) gids[i] = bytes.readUInt32LE(i * 4);
+  let gids;
+  if (encoding === "csv") {
+    // CSV: comma-separated GID values (may include Tiled flip flags as large positive ints)
+    gids = m[3].trim().split(",").map((v) => Number(v.trim()) >>> 0);
+  } else if (encoding === "base64") {
+    let bytes = Buffer.from(m[3].trim(), "base64");
+    if (compression === "zlib") bytes = inflateSync(bytes);
+    else if (compression) throw new Error(`layer ${name}: unsupported compression ${compression}`);
+    // Keep the raw 32-bit GID incl. Tiled flip flags (top 3 bits); the runtime decodes id + flips.
+    gids = new Array(width * height);
+    for (let i = 0; i < width * height; i++) gids[i] = bytes.readUInt32LE(i * 4);
+  } else {
+    throw new Error(`layer ${name}: unexpected encoding ${encoding}`);
+  }
   layers.push({ name, gids });
 }
 

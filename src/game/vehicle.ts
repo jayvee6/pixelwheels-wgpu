@@ -6,6 +6,8 @@ import {
   UNIT_FOR_PIXEL, MS_TO_KMH, PIXELS_PER_METER, GamePlay, MaterialGrip, MaterialSpeed,
 } from "./constants.ts";
 
+const BOX2D_DT: number = 1 / 60;
+
 const DEG2RAD = Math.PI / 180;
 // libGDX Interpolation.sineOut: sin(a * PI/2)
 const sineOut = (a: number) => Math.sin(a * Math.PI / 2);
@@ -113,6 +115,9 @@ export class Vehicle {
   // render size in px: x extent (forward) = xml height, y extent (lateral) = xml width
   readonly renderW: number;
   readonly renderH: number;
+  // disruption state (wall hit at speed → temporary slowdown)
+  disruptedTimer = 0; // seconds remaining in disrupted state
+  readonly DISRUPTED_DURATION = 1.5;
 
   constructor(world: World, def: VehicleDef, x: number, y: number, angleRad: number, maxDrivingForce: number,
               tireSizes: Record<string, { w: number; h: number }>) {
@@ -202,13 +207,38 @@ export class Vehicle {
     // applyGroundEffects: ground drag from the material under the car (ROAD=1 → none; SNOW slows).
     const groundSpeed = MaterialSpeed[this.groundMaterial] ?? 1;
     if (groundSpeed < 1) applyDrag(this.body, (1 - groundSpeed) * GamePlay.groundDragFactor);
+
+    // turbo boost: TURBO tiles apply a forward force burst (in addition to suppressing drag).
+    if (this.groundMaterial === "TURBO") {
+      const fwd = this.body.getWorldVector(new Vec2(0, 1));
+      this.body.applyForceToCenter(new Vec2(fwd.x * 800, fwd.y * 800), true);
+    }
+
+    // disruption: wall hit at speed caps velocity for DISRUPTED_DURATION seconds.
+    if (this.disruptedTimer > 0) {
+      this.disruptedTimer = Math.max(0, this.disruptedTimer - BOX2D_DT);
+      const vel = this.body.getLinearVelocity();
+      const speed = Math.sqrt(vel.x ** 2 + vel.y ** 2);
+      // GamePlay.maxSpeed is in km/h; convert to m/s for Box2D comparison.
+      const maxDisruptedSpeed = (GamePlay.maxSpeed / MS_TO_KMH) * 0.35;
+      if (speed > maxDisruptedSpeed) {
+        const scale = maxDisruptedSpeed / speed;
+        this.body.setLinearVelocity(new Vec2(vel.x * scale, vel.y * scale));
+      }
+    }
+
     // actWheels
     for (const w of this.wheels) w.act(this.braking);
   }
 
+  /** Trigger a disruption (wall hit): caps vehicle speed for DISRUPTED_DURATION seconds. */
+  disrupt() { this.disruptedTimer = this.DISRUPTED_DURATION; }
+
   get angle(): number { return this.body.getAngle(); }
   get speedKmh(): number { const v = this.body.getLinearVelocity(); return Math.hypot(v.x, v.y) * MS_TO_KMH; }
   get isDrifting(): boolean { return this.wheels.some((w) => w.drifting); }
+  get isBoosting(): boolean { return this.groundMaterial === "TURBO"; }
+  get isDisrupted(): boolean { return this.disruptedTimer > 0; }
 
   /** World position in pixels (for the renderer/camera). */
   get pixelPos(): { x: number; y: number } {

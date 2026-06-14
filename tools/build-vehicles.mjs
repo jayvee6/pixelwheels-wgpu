@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC = process.env.PW_VEH_SRC ?? "/Users/jdot/Documents/Development/pixelwheels-src/android/assets/vehicles";
 const OUT = resolve(__dirname, "../public/assets/vehicles.json");
-const ONLY = (process.env.PW_VEHICLES ?? "jeep,red,police").split(",");
+const ONLY = (process.env.PW_VEHICLES ?? "jeep,red,police,pickup,miramar,old-f1,roadster,harvester,santa,rocket,2cv,dark-m,antonin,c15,bigfoot").split(",");
 
 const attr = (s, name, def = null) => {
   const m = s.match(new RegExp(`${name}="([^"]*)"`));

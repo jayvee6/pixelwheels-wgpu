@@ -11,6 +11,14 @@ export class AudioEngine {
   private squealSrc: AudioBufferSourceNode | null = null;
   private squealGain: GainNode | null = null;
 
+  // --- new SFX private fields ---
+  private _engineOsc: OscillatorNode | null = null;
+  private _engineGain: GainNode | null = null;
+  private _engineRunning = false;
+
+  private _screechGain: GainNode | null = null;
+  private _screechNoise: AudioBufferSourceNode | null = null;
+
   init() {
     if (this.ctx) return;
     this.ctx = new AudioContext();
@@ -112,5 +120,181 @@ export class AudioEngine {
     osc.start(t);
     osc.stop(t + 0.14);
     osc.onended = () => { osc.disconnect(); g.disconnect(); };
+  }
+
+  // -------------------------------------------------------------------------
+  // Engine loop (pitched sawtooth — separate from the legacy engOsc in init)
+  // -------------------------------------------------------------------------
+
+  /** Start the independent engine-loop oscillator. Call once after init(). */
+  startEngine() {
+    if (!this.ctx || this._engineRunning) return;
+    const master = this.masterOutput;
+    if (!master) return;
+
+    const bpf = this.ctx.createBiquadFilter();
+    bpf.type = "bandpass";
+    bpf.frequency.value = 400;
+    bpf.Q.value = 8;
+
+    this._engineGain = this.ctx.createGain();
+    this._engineGain.gain.value = 0.08;
+    this._engineGain.connect(master);
+
+    this._engineOsc = this.ctx.createOscillator();
+    this._engineOsc.type = "sawtooth";
+    this._engineOsc.frequency.value = 80;
+    this._engineOsc.connect(bpf);
+    bpf.connect(this._engineGain);
+    this._engineOsc.start();
+
+    this._engineRunning = true;
+  }
+
+  /** Call every frame with the player's speed. Smoothly modulates pitch+volume. */
+  updateEngine(speedKmh: number) {
+    if (!this._engineRunning || !this._engineOsc || !this._engineGain || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    this._engineOsc.frequency.setTargetAtTime(80 + speedKmh * 1.4, t, 0.08);
+    this._engineGain.gain.setTargetAtTime(
+      0.04 + Math.min(speedKmh / 200, 1) * 0.09,
+      t,
+      0.08,
+    );
+  }
+
+  /** Stop and tear down the engine-loop oscillator. */
+  stopEngine() {
+    if (this._engineOsc) {
+      this._engineOsc.stop();
+      this._engineOsc.disconnect();
+      this._engineOsc = null;
+    }
+    if (this._engineGain) {
+      this._engineGain.disconnect();
+      this._engineGain = null;
+    }
+    this._engineRunning = false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Tire screech (drift)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Drive the drift screech each frame.
+   * intensity ∈ [0, 1] — pass 0 to fade out and stop the noise source.
+   */
+  setScreech(intensity: number) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const master = this.masterOutput;
+    if (!master) return;
+    const t = ctx.currentTime;
+
+    if (intensity > 0 && !this._screechNoise) {
+      // Build a 0.5 s looped noise buffer
+      const bufLen = Math.floor(ctx.sampleRate * 0.5);
+      const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+
+      const bpf = ctx.createBiquadFilter();
+      bpf.type = "bandpass";
+      bpf.frequency.value = 300;
+      bpf.Q.value = 3;
+
+      this._screechGain = ctx.createGain();
+      this._screechGain.gain.value = 0;
+      this._screechGain.connect(master);
+
+      bpf.connect(this._screechGain);
+
+      this._screechNoise = ctx.createBufferSource();
+      this._screechNoise.buffer = buf;
+      this._screechNoise.loop = true;
+      this._screechNoise.connect(bpf);
+      this._screechNoise.start();
+    }
+
+    if (this._screechGain) {
+      this._screechGain.gain.setTargetAtTime(intensity * 0.15, t, 0.05);
+    }
+
+    if (intensity === 0 && this._screechNoise) {
+      // Ramp gain to silence then tear down
+      this._screechGain?.gain.setTargetAtTime(0, t, 0.05);
+      const noiseRef = this._screechNoise;
+      const gainRef = this._screechGain;
+      setTimeout(() => {
+        noiseRef.stop();
+        noiseRef.disconnect();
+        gainRef?.disconnect();
+      }, 150);
+      this._screechNoise = null;
+      this._screechGain = null;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Countdown beep
+  // -------------------------------------------------------------------------
+
+  /**
+   * Short sine beep. pitch=1.0 → 440 Hz (for 3-2-1), pitch=1.5 → 660 Hz (GO!).
+   */
+  beep(pitch = 1.0) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const master = this.masterOutput;
+    if (!master) return;
+    const t = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = 440 * pitch;
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.3, t + 0.01);
+    g.gain.linearRampToValueAtTime(0, t + 0.15);
+
+    osc.connect(g);
+    g.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.15);
+    osc.onended = () => { osc.disconnect(); g.disconnect(); };
+  }
+
+  // -------------------------------------------------------------------------
+  // Bonus pickup chime
+  // -------------------------------------------------------------------------
+
+  /** Two-note ascending chime: D5 then F#5, 70 ms apart. */
+  pickup() {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const master = this.masterOutput;
+    if (!master) return;
+
+    const notes = [587, 740]; // D5, F#5
+    notes.forEach((freq, i) => {
+      const delay = i * 0.07;
+      const t = ctx.currentTime + delay;
+
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.2, t);
+      g.gain.linearRampToValueAtTime(0, t + 0.18);
+
+      osc.connect(g);
+      g.connect(master);
+      osc.start(t);
+      osc.stop(t + 0.18);
+      osc.onended = () => { osc.disconnect(); g.disconnect(); };
+    });
   }
 }

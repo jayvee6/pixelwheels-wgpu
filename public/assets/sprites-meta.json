@@ -1,13 +1,61 @@
 {
+  "vehicles/2cv": {
+    "w": 56,
+    "h": 30
+  },
+  "vehicles/antonin": {
+    "w": 52,
+    "h": 32
+  },
+  "vehicles/bigfoot": {
+    "w": 55,
+    "h": 26
+  },
+  "vehicles/c15": {
+    "w": 58,
+    "h": 27
+  },
+  "vehicles/dark-m": {
+    "w": 89,
+    "h": 40
+  },
+  "vehicles/harvester": {
+    "w": 56,
+    "h": 32
+  },
   "vehicles/jeep": {
     "w": 53,
     "h": 34
+  },
+  "vehicles/miramar": {
+    "w": 86,
+    "h": 35
+  },
+  "vehicles/old-f1": {
+    "w": 55,
+    "h": 23
+  },
+  "vehicles/pickup": {
+    "w": 58,
+    "h": 32
   },
   "vehicles/police": {
     "w": 56,
     "h": 32
   },
   "vehicles/red": {
+    "w": 57,
+    "h": 32
+  },
+  "vehicles/roadster": {
+    "w": 56,
+    "h": 31
+  },
+  "vehicles/rocket": {
+    "w": 76,
+    "h": 40
+  },
+  "vehicles/santa": {
     "w": 57,
     "h": 32
   },

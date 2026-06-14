@@ -7,3 +7,4 @@ dist/
 public/assets/sprites/
 public/assets/maps/*.png
 .cache/
+.vercel

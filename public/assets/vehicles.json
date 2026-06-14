@@ -106,5 +106,501 @@
         "tireSize": "NORMAL"
       }
     ]
+  },
+  "pickup": {
+    "id": "pickup",
+    "name": "Pickup",
+    "speed": 1,
+    "width": 30,
+    "height": 56,
+    "image": "pickup",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 56,
+        "corner": 0.5,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 24,
+        "y": 46,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 24,
+        "y": 12,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "miramar": {
+    "id": "miramar",
+    "name": "Miramar",
+    "speed": 1.15,
+    "width": 35,
+    "height": 86,
+    "image": "miramar",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 35,
+        "height": 86,
+        "corner": 3,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 27,
+        "y": 69,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 27,
+        "y": 19,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "old-f1": {
+    "id": "old-f1",
+    "name": "BRGP42",
+    "speed": 1,
+    "width": 23,
+    "height": 55,
+    "image": "old-f1",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 16,
+        "height": 55,
+        "corner": 6,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 28,
+        "y": 47,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "THIN"
+      },
+      {
+        "width": 30,
+        "y": 11,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "THIN"
+      }
+    ]
+  },
+  "roadster": {
+    "id": "roadster",
+    "name": "Roadster",
+    "speed": 1,
+    "width": 30,
+    "height": 56,
+    "image": "roadster",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 20,
+        "height": 54,
+        "corner": 0.5,
+        "x": null,
+        "y": 2
+      },
+      {
+        "type": "octogon",
+        "width": 32,
+        "height": 18,
+        "corner": 3,
+        "x": null,
+        "y": 5
+      },
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 14,
+        "corner": 2,
+        "x": null,
+        "y": 40
+      }
+    ],
+    "axles": [
+      {
+        "width": 21,
+        "y": 47,
+        "steer": 0.8,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 23,
+        "y": 14,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "harvester": {
+    "id": "harvester",
+    "name": "Harvester",
+    "speed": 1,
+    "width": 30,
+    "height": 56,
+    "image": "harvester",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 20,
+        "height": 37,
+        "corner": 2,
+        "x": null,
+        "y": 3
+      },
+      {
+        "type": "octogon",
+        "width": 32,
+        "height": 16,
+        "corner": 0.5,
+        "x": null,
+        "y": 40
+      }
+    ],
+    "axles": [
+      {
+        "width": 26,
+        "y": 39,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 18,
+        "y": 12,
+        "steer": -1.4,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "santa": {
+    "id": "santa",
+    "name": "Santa Truck",
+    "speed": 0.8,
+    "width": 30,
+    "height": 56,
+    "image": "santa",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 56,
+        "corner": 1,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 26,
+        "y": 48,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 28,
+        "y": 24,
+        "steer": 0.5,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 28,
+        "y": 9,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "rocket": {
+    "id": "rocket",
+    "name": "Rocket",
+    "speed": 1.2,
+    "width": 40,
+    "height": 77,
+    "image": "rocket",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 16,
+        "height": 60,
+        "corner": 0,
+        "x": null,
+        "y": 6
+      },
+      {
+        "type": "trapezoid",
+        "bottomWidth": 16,
+        "topWidth": 2,
+        "height": 9,
+        "x": null,
+        "y": 66
+      },
+      {
+        "type": "trapezoid",
+        "bottomWidth": 26,
+        "topWidth": 18,
+        "height": 5,
+        "x": null,
+        "y": 60
+      }
+    ],
+    "axles": [
+      {
+        "width": 22,
+        "y": 58,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 32,
+        "y": 16,
+        "steer": -0.2,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "LARGE"
+      }
+    ]
+  },
+  "2cv": {
+    "id": "2cv",
+    "name": "2-Deuch",
+    "speed": 0.8,
+    "width": 30,
+    "height": 56,
+    "image": "2cv",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 26,
+        "height": 56,
+        "corner": 3,
+        "x": null,
+        "y": null
+      },
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 16,
+        "corner": 4,
+        "x": null,
+        "y": 1
+      },
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 16,
+        "corner": 4,
+        "x": null,
+        "y": 39
+      }
+    ],
+    "axles": [
+      {
+        "width": 20,
+        "y": 47,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 20,
+        "y": 9,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "dark-m": {
+    "id": "dark-m",
+    "name": "Dark M",
+    "speed": 1.2,
+    "width": 40,
+    "height": 89,
+    "image": "dark-m",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 34,
+        "height": 79,
+        "corner": 6,
+        "x": null,
+        "y": 10
+      }
+    ],
+    "axles": [
+      {
+        "width": 28,
+        "y": 77,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 28,
+        "y": 25,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "antonin": {
+    "id": "antonin",
+    "name": "Ant On-1",
+    "speed": 1,
+    "width": 30,
+    "height": 52,
+    "image": "antonin",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 30,
+        "height": 50,
+        "corner": 6,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 26,
+        "y": 40,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 26,
+        "y": 9,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "c15": {
+    "id": "c15",
+    "name": "C15 Vindieu",
+    "speed": 1,
+    "width": 27,
+    "height": 58,
+    "image": "c15",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 25,
+        "height": 58,
+        "corner": 3,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 19,
+        "y": 47,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      },
+      {
+        "width": 21,
+        "y": 9,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "NORMAL"
+      }
+    ]
+  },
+  "bigfoot": {
+    "id": "bigfoot",
+    "name": "Broster Truck",
+    "speed": 1,
+    "width": 26,
+    "height": 55,
+    "image": "bigfoot",
+    "shapes": [
+      {
+        "type": "octogon",
+        "width": 26,
+        "height": 55,
+        "corner": 3,
+        "x": null,
+        "y": null
+      }
+    ],
+    "axles": [
+      {
+        "width": 32,
+        "y": 46,
+        "steer": 1,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "HUGE"
+      },
+      {
+        "width": 32,
+        "y": 10,
+        "steer": 0,
+        "drive": 1,
+        "drift": true,
+        "tireSize": "HUGE"
+      }
+    ]
   }
 }

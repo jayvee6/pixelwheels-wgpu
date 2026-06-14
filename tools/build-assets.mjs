@@ -15,7 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC = process.env.PW_SRC_ROOT ?? "/Users/jdot/Documents/Development/pixelwheels-src";
 const ASSETS_SRC = resolve(SRC, "core/assets-src");
 const OUT = resolve(__dirname, "../public/assets");
-const WANT_VEHICLES = (process.env.PW_VEHICLES ?? "jeep,red,police").split(",");
+const WANT_VEHICLES = (process.env.PW_VEHICLES ?? "jeep,red,police,pickup,miramar,old-f1,roadster,harvester,santa,rocket,2cv,dark-m,antonin,c15,bigfoot").split(",");
 
 const meta = {}; // region -> {w,h}
 
@@ -53,6 +53,7 @@ console.log("tilesets:");
   const mapsAse = [
     { name: "snow", remap: true },
     { name: "country", remap: true },
+    { name: "city", remap: true },
   ];
   for (const { name, remap } of mapsAse) {
     const asePath = resolve(ASSETS_SRC, `maps/${name}.ase`);

@@ -22,7 +22,7 @@ import { createTuningPanel } from "./game/tuning.ts";
 import { AudioEngine } from "./engine/audio.ts";
 import { ChiptunePlayer } from "./engine/music.ts";
 import { Minimap } from "./game/minimap.ts";
-import { SpeedLines } from "./game/speedlines.ts";
+
 import type { World } from "planck";
 
 const canvas = document.getElementById("gpu") as HTMLCanvasElement;
@@ -42,15 +42,34 @@ interface RacerConfig { defId: string; name: string; player?: boolean; tint?: [n
 
 // Car selection options (index = choice index, not ROSTER index)
 const CAR_OPTIONS = [
-  { defId: "jeep",   label: "Jeep" },
-  { defId: "red",    label: "Red Racer" },
-  { defId: "police", label: "Police Car" },
+  { defId: "jeep",      label: "Jeep" },
+  { defId: "red",       label: "Red Racer" },
+  { defId: "police",    label: "Police Car" },
+  { defId: "pickup",    label: "Pickup" },
+  { defId: "miramar",   label: "Miramar" },
+  { defId: "old-f1",    label: "Old F1" },
+  { defId: "roadster",  label: "Roadster" },
+  { defId: "harvester", label: "Harvester" },
+  { defId: "santa",     label: "Santa" },
+  { defId: "rocket",    label: "Rocket" },
+  { defId: "2cv",       label: "2CV" },
+  { defId: "dark-m",    label: "Dark-M" },
+  { defId: "antonin",   label: "Antonin" },
+  { defId: "c15",       label: "C15" },
+  { defId: "bigfoot",   label: "Bigfoot" },
 ] as const;
 
 // Track options
 const TRACK_OPTIONS = [
-  { name: "race",    label: "Snow Ridge",  emoji: "❄️" },
-  { name: "country", label: "Country Road", emoji: "🌿" },
+  { name: "race",         label: "Snow Ridge",   emoji: "❄️"  },
+  { name: "country",      label: "Country Road",  emoji: "🌿"  },
+  { name: "snow2",        label: "Snow Slalom",   emoji: "🌨️" },
+  { name: "snow3",        label: "Icy Circuit",   emoji: "⛄"  },
+  { name: "flood",        label: "Flood Plains",  emoji: "🌊"  },
+  { name: "river",        label: "Riverside",     emoji: "🏞️" },
+  { name: "be",           label: "Be Circuit",    emoji: "🏁"  },
+  { name: "city3",        label: "City Speedway", emoji: "🌆"  },
+  { name: "tiny-sur-mer", label: "Tiny-sur-Mer",  emoji: "⛵"  },
 ] as const;
 type TrackName = typeof TRACK_OPTIONS[number]["name"];
 
@@ -128,7 +147,7 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
     trackSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
 
     const trackRow = document.createElement("div");
-    trackRow.style.cssText = "display:flex;gap:.8rem;margin-bottom:1.8rem;";
+    trackRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;max-width:900px;justify-content:center;";
 
     function makeTrackBtn(i: number): HTMLButtonElement {
       const opt = TRACK_OPTIONS[i];
@@ -171,10 +190,11 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
     carSectionLabel.textContent = "CAR";
     carSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
 
-    // Car cards row
+    // Car cards row (wrapping grid for 15 vehicles)
     const carRow = document.createElement("div");
     carRow.style.cssText = [
-      "display:flex", "gap:1.4rem", "margin-bottom:2.4rem",
+      "display:flex", "flex-wrap:wrap", "gap:.8rem", "margin-bottom:2.4rem",
+      "max-width:900px", "justify-content:center",
     ].join(";");
 
     function makeCard(i: number): HTMLDivElement {
@@ -184,12 +204,12 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ car
         const active = selected === i;
         card.style.cssText = [
           "display:flex", "flex-direction:column", "align-items:center",
-          "gap:.7rem", "padding:1.1rem 1.4rem",
-          "border-radius:12px", "cursor:pointer",
+          "gap:.4rem", "padding:.7rem .9rem",
+          "border-radius:10px", "cursor:pointer",
           `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.12)"}`,
           `background:${active ? "rgba(255,215,0,0.10)" : "rgba(255,255,255,0.04)"}`,
           "transition:border 0.12s,background 0.12s",
-          "min-width:120px",
+          "min-width:90px",
         ].join(";");
       };
       updateStyle();
@@ -395,15 +415,16 @@ async function main() {
         vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, maxLife: life,
         cr: 0.72, cg: 0.72, cb: 0.78 });
     }
+    // disrupt any racer that hits a wall hard (15 km/h threshold → 4.17 m/s in Box2D units)
+    if (spd > 4.17) {
+      race.racers[ud.racer]?.vehicle.disrupt();
+    }
     if (ud.racer === 0) { // player only: shake + audio
       shakeAmt = Math.min(shakeAmt + spd * 0.35, 5);
       audio.impact(spd / 8);
     }
   });
   const waypoints = new WaypointStore(track, lapTable);
-
-  // --- speed lines overlay ---
-  const speedLines = new SpeedLines(document.body);
 
   // --- finish-screen overlay ---
   const finishOverlayEl = document.createElement("div");
@@ -713,6 +734,26 @@ async function main() {
     // update audio each frame (engine pitch + squeal gate)
     audio.update(player().vehicle.speedKmh, player().vehicle.isDrifting);
 
+    // engine loop SFX: start when race goes running, update each frame, stop on finish
+    if (race.state === "running" || race.state === "finished") {
+      audio.updateEngine(player().vehicle.speedKmh);
+    }
+
+    // tire screech: compute lateral slide velocity and drive setScreech each frame
+    if (race.state === "running") {
+      const pVeh = player().vehicle;
+      const vel = pVeh.body.getLinearVelocity();
+      const angle = pVeh.body.getAngle();
+      const speed = Math.sqrt(vel.x ** 2 + vel.y ** 2);
+      const fwdX = Math.cos(angle), fwdY = Math.sin(angle);
+      const fwdSpeed = vel.x * fwdX + vel.y * fwdY;
+      const lateralSpeed = Math.sqrt(Math.max(0, speed ** 2 - fwdSpeed ** 2));
+      const screechIntensity = Math.min(1, Math.max(0, (lateralSpeed - 1.5) / 4));
+      audio.setScreech(screechIntensity);
+    } else {
+      audio.setScreech(0);
+    }
+
     // music: start on countdown begin, stop when race finishes
     if (!musicStarted && race.state === "countdown" && music) {
       musicStarted = true;
@@ -721,6 +762,7 @@ async function main() {
     if (race.state === "finished" && musicStarted && music) {
       musicStarted = false;
       music.stop();
+      audio.stopEngine();
     }
 
     // position-change + lap-complete notifications
@@ -773,12 +815,6 @@ async function main() {
 
     // speed lines: radiate from the car's screen position
     {
-      const psx = currSnap[0].body.x, psy = currSnap[0].body.y;
-      const csx_ndc = vp[0] * psx + vp[4] * psy + vp[12];
-      const csy_ndc = vp[1] * psx + vp[5] * psy + vp[13];
-      const carSx = (csx_ndc + 1) / 2 * W;
-      const carSy = (1 - csy_ndc) / 2 * H;
-      speedLines.update(dt, player().vehicle.speedKmh, carSx, carSy);
     }
 
     // --- ambient snowfall: spawn flakes at top of camera view each frame ---
@@ -844,7 +880,14 @@ async function main() {
       const ix = prev.body.x + (curr.body.x - prev.body.x) * alpha;
       const iy = prev.body.y + (curr.body.y - prev.body.y) * alpha;
       const ia = lerpAngle(prev.body.angle, curr.body.angle, alpha);
-      carsByDef[cfg.defId].push({ x: ix, y: iy, w: tex.width, h: tex.height, rot: ia, ...rectUV(0, 0, 1, 1), ...tintFor(cfg) });
+      // base tint from roster, then disruption flash (orange/red pulse)
+      const baseTint = tintFor(cfg);
+      let tintR = baseTint.r ?? 1, tintG = baseTint.g ?? 1, tintB = baseTint.b ?? 1;
+      if (r.vehicle.isDisrupted) {
+        const flash = Math.sin(r.vehicle.disruptedTimer * 40) > 0;
+        if (flash) { tintR = 1.0; tintG = 0.25; tintB = 0.1; }
+      }
+      carsByDef[cfg.defId].push({ x: ix, y: iy, w: tex.width, h: tex.height, rot: ia, ...rectUV(0, 0, 1, 1), r: tintR, g: tintG, b: tintB });
       if (tireTex) {
         for (let wi = 0; wi < r.vehicle.wheels.length; wi++) {
           const pw = prev.wheels[wi], cw = curr.wheels[wi];
@@ -912,6 +955,13 @@ async function main() {
           countdownEl.style.color = color;
           countdownEl.style.opacity = "1";
           countdownEl.textContent = label;
+          // countdown beeps
+          if (label === "GO!") {
+            audio.beep(1.5);
+            audio.startEngine();
+          } else {
+            audio.beep(1.0);
+          }
           if (label === "GO!") {
             countdownEl.style.transition = "";
             countdownEl.style.transform = "scale(1.35)";
@@ -1041,9 +1091,12 @@ async function main() {
     const speed = pl.vehicle.speedKmh.toFixed(0);
     const best = pl.lap.bestLapTime === Infinity ? "" : `  best ${pl.lap.bestLapTime.toFixed(2)}s`;
     const fpsStr = showCollision ? `${fps}fps  ` : "";
+    const turboStr = pl.vehicle.isBoosting
+      ? `<span style="color:#FFD700;font-weight:900;font-size:1.1rem;"> ⚡ TURBO</span>`
+      : "";
     return (
       `<span style="font-size:1.4rem;color:#FFD700;font-weight:900">P${pos}</span>` +
-      `  Lap ${lap}  ${speed} km/h${best}<br>` +
+      `  Lap ${lap}  ${speed} km/h${best}${turboStr}<br>` +
       `<span style="font-size:0.7rem;color:#666">${fpsStr}${trackLabel}</span>`
     );
   }
