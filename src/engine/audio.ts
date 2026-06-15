@@ -6,8 +6,6 @@
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
-  private engOsc: OscillatorNode | null = null;
-  private engGain: GainNode | null = null;
   private squealSrc: AudioBufferSourceNode | null = null;
   private squealGain: GainNode | null = null;
 
@@ -22,23 +20,6 @@ export class AudioEngine {
   init() {
     if (this.ctx) return;
     this.ctx = new AudioContext();
-
-    // Engine: sawtooth → lowpass → gain
-    const lpf = this.ctx.createBiquadFilter();
-    lpf.type = "lowpass";
-    lpf.frequency.value = 700;
-    lpf.Q.value = 0.5;
-
-    this.engGain = this.ctx.createGain();
-    this.engGain.gain.value = 0;
-    this.engGain.connect(this.ctx.destination);
-
-    this.engOsc = this.ctx.createOscillator();
-    this.engOsc.type = "sawtooth";
-    this.engOsc.frequency.value = 80;
-    this.engOsc.connect(lpf);
-    lpf.connect(this.engGain);
-    this.engOsc.start();
 
     // Tire squeal: 2-second white noise loop → bandpass → gain
     const noiseLen = this.ctx.sampleRate * 2;
@@ -87,14 +68,10 @@ export class AudioEngine {
   }
   private _masterBus: GainNode | null = null;
 
-  /** Call each frame with the player's current speed and drift state. */
-  update(speedKmh: number, isDrifting: boolean) {
-    if (!this.ctx || !this.engOsc || !this.engGain || !this.squealGain) return;
+  /** Call each frame with the player's drift state. */
+  update(_speedKmh: number, isDrifting: boolean) {
+    if (!this.ctx || !this.squealGain) return;
     const t = this.ctx.currentTime;
-    // Pitch: 80Hz idle → ~230Hz at 100km/h
-    this.engOsc.frequency.setTargetAtTime(80 + speedKmh * 1.5, t, 0.08);
-    // Volume: quiet idle ramp to louder at speed
-    this.engGain.gain.setTargetAtTime(0.08 + Math.min(speedKmh / 120, 1) * 0.14, t, 0.1);
     // Squeal: fade in on drift, out when grip resumes
     this.squealGain.gain.setTargetAtTime(isDrifting ? 0.11 : 0, t, 0.04);
   }
@@ -304,20 +281,20 @@ export class AudioEngine {
 
   /** Short descending square-wave sweep: 900 Hz → 400 Hz over 0.06 s. */
   shoot() {
-    if (!this.ctx || !this._masterBus) return;
+    const master = this.masterOutput;
+    if (!this.ctx || !master) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
     osc.type = "square";
-    // Frequency sweep: 900Hz → 400Hz over 0.06s (descending "pew")
     osc.frequency.setValueAtTime(900, t);
     osc.frequency.exponentialRampToValueAtTime(400, t + 0.06);
     g.gain.setValueAtTime(0.25, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
     osc.connect(g);
-    g.connect(this._masterBus);
+    g.connect(master);
     osc.start(t);
     osc.stop(t + 0.1);
     osc.onended = () => { osc.disconnect(); g.disconnect(); };
@@ -329,11 +306,11 @@ export class AudioEngine {
 
   /** Low sine body thud (120→30 Hz) plus a filtered noise burst. */
   boom() {
-    if (!this.ctx || !this._masterBus) return;
+    const master = this.masterOutput;
+    if (!this.ctx || !master) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
-    // Low body thud (sine sweep 120→30Hz)
     const body = ctx.createOscillator();
     const bodyGain = ctx.createGain();
     body.type = "sine";
@@ -342,12 +319,11 @@ export class AudioEngine {
     bodyGain.gain.setValueAtTime(0.5, t);
     bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
     body.connect(bodyGain);
-    bodyGain.connect(this._masterBus);
+    bodyGain.connect(master);
     body.start(t);
     body.stop(t + 0.3);
     body.onended = () => { body.disconnect(); bodyGain.disconnect(); };
 
-    // Noise burst through lowpass
     const bufLen = Math.ceil(ctx.sampleRate * 0.25);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
     const data = buf.getChannelData(0);
@@ -362,7 +338,7 @@ export class AudioEngine {
     noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
     noise.connect(lp);
     lp.connect(noiseGain);
-    noiseGain.connect(this._masterBus);
+    noiseGain.connect(master);
     noise.start(t);
     noise.onended = () => { noise.disconnect(); lp.disconnect(); noiseGain.disconnect(); };
   }

@@ -144,6 +144,8 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
       "align-items:center", "justify-content:center",
       "font-family:monospace", "color:#eee",
       "user-select:none",
+      "overflow-y:auto",
+      "padding:1.5rem 1rem",
     ].join(";");
 
     // Title
@@ -165,10 +167,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     // Mode selector row
     const modeSectionLabel = document.createElement("div");
     modeSectionLabel.textContent = "MODE";
-    modeSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+    modeSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
 
     const modeRow = document.createElement("div");
-    modeRow.style.cssText = "display:flex;gap:.6rem;margin-bottom:1.4rem;justify-content:center;";
+    modeRow.style.cssText = "display:flex;gap:.6rem;margin-bottom:1rem;justify-content:center;";
 
     const MODE_OPTS = [
       { id: "quick" as const, label: "QUICK RACE" },
@@ -206,7 +208,7 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
 
     // Championship picker section (hidden by default)
     const champSection = document.createElement("div");
-    champSection.style.cssText = "display:none;flex-direction:column;align-items:center;margin-bottom:1.4rem;gap:.6rem;";
+    champSection.style.cssText = "display:none;flex-direction:column;align-items:center;margin-bottom:1rem;gap:.6rem;";
     const champLabel = document.createElement("div");
     champLabel.textContent = "CHAMPIONSHIP";
     champLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
@@ -249,10 +251,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     // Track selection
     const trackSectionLabel = document.createElement("div");
     trackSectionLabel.textContent = "TRACK";
-    trackSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+    trackSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
 
     const trackRow = document.createElement("div");
-    trackRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;max-width:900px;justify-content:center;";
+    trackRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.2rem;max-width:900px;justify-content:center;";
 
     function makeTrackBtn(i: number): HTMLButtonElement {
       const opt = TRACK_OPTIONS[i];
@@ -293,10 +295,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     // Difficulty selection
     const diffSectionLabel = document.createElement("div");
     diffSectionLabel.textContent = "DIFFICULTY";
-    diffSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+    diffSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
 
     const diffRow = document.createElement("div");
-    diffRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;justify-content:center;";
+    diffRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.2rem;justify-content:center;";
 
     const DIFF_OPTIONS: Array<{ id: "easy" | "medium" | "hard"; label: string }> = [
       { id: "easy",   label: "Easy" },
@@ -342,10 +344,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     // Lap count selection
     const lapSectionLabel = document.createElement("div");
     lapSectionLabel.textContent = "LAPS";
-    lapSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+    lapSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
 
     const lapRow = document.createElement("div");
-    lapRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.8rem;justify-content:center;";
+    lapRow.style.cssText = "display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1.2rem;justify-content:center;";
 
     const LAP_OPTIONS = [1, 3, 5];
 
@@ -387,12 +389,12 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     // Car section label
     const carSectionLabel = document.createElement("div");
     carSectionLabel.textContent = "CAR";
-    carSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.6rem;";
+    carSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
 
     // Car cards row (wrapping grid for 15 vehicles)
     const carRow = document.createElement("div");
     carRow.style.cssText = [
-      "display:flex", "flex-wrap:wrap", "gap:.8rem", "margin-bottom:2.4rem",
+      "display:flex", "flex-wrap:wrap", "gap:.8rem", "margin-bottom:1.4rem",
       "max-width:900px", "justify-content:center",
     ].join(";");
 
@@ -403,12 +405,12 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
         const active = selected === i;
         card.style.cssText = [
           "display:flex", "flex-direction:column", "align-items:center",
-          "gap:.4rem", "padding:.7rem .9rem",
+          "gap:.4rem", "padding:.5rem .7rem",
           "border-radius:10px", "cursor:pointer",
           `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.12)"}`,
           `background:${active ? "rgba(255,215,0,0.10)" : "rgba(255,255,255,0.04)"}`,
           "transition:border 0.12s,background 0.12s",
-          "min-width:90px",
+          "min-width:80px",
         ].join(";");
       };
       updateStyle();
@@ -416,10 +418,9 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
       const img = document.createElement("img");
       img.src = `/assets/sprites/vehicles/${opt.defId}.png`;
       img.style.cssText = [
-        "width:auto", "height:auto",
+        "width:64px", "height:64px",
         "image-rendering:pixelated",
-        "transform:scale(3)", "transform-origin:center",
-        "margin:1.5rem 0",  // space for the 3× scaled image
+        "object-fit:contain",
       ].join(";");
 
       const label = document.createElement("div");
@@ -1119,9 +1120,6 @@ async function main() {
 
     updateCamera(dt);
 
-    // update audio each frame (engine pitch + squeal gate)
-    audio.update(player().vehicle.speedKmh, player().vehicle.isDrifting);
-
     // engine loop SFX: start when race goes running, update each frame, stop on finish
     if (race.state === "running" || race.state === "finished") {
       audio.updateEngine(player().vehicle.speedKmh);
@@ -1252,7 +1250,10 @@ async function main() {
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.vx *= 0.88; p.vy *= 0.88; // drag
       p.life -= dt;
-      if (p.life <= 0) particles.splice(i, 1);
+      if (p.life <= 0) {
+        particles[i] = particles[particles.length - 1];
+        particles.pop();
+      }
     }
     const particleSprites: Sprite[] = particles.map((p) => {
       const t = p.life / p.maxLife;
