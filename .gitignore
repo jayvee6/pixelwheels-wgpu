@@ -3,8 +3,8 @@ dist/
 *.log
 .DS_Store
 
-# Extracted upstream assets (rebuild via `npm run assets`); not redistributed in-repo.
-public/assets/sprites/
+# Source asset pipeline outputs — committed for Vercel deployment (CC-BY-SA 4.0, credit: Aurélien Gâteau)
+# Regenerate locally with: npm run assets
 public/assets/maps/*.png
 .cache/
 .vercel
