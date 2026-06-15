@@ -141,11 +141,11 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
       "position:fixed", "inset:0", "z-index:50",
       "background:rgba(8,12,24,0.97)",
       "display:flex", "flex-direction:column",
-      "align-items:center", "justify-content:center",
+      "align-items:center", "justify-content:flex-start",
       "font-family:monospace", "color:#eee",
       "user-select:none",
       "overflow-y:auto",
-      "padding:1.5rem 1rem",
+      "padding:2rem 1rem",
     ].join(";");
 
     // Title
