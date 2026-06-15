@@ -483,6 +483,19 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
 
     carImgWrap.addEventListener("dblclick", () => confirm());
 
+    // Touch swipe on the carousel panel
+    let touchStartX = 0;
+    carouselWrap.addEventListener("touchstart", (e) => {
+      touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    carouselWrap.addEventListener("touchend", (e) => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) < 30) return;
+      if (dx < 0) { selected = (selected + 1) % CAR_OPTIONS.length; }
+      else { selected = (selected + CAR_OPTIONS.length - 1) % CAR_OPTIONS.length; }
+      refreshCarousel();
+    }, { passive: true });
+
     // RACE button
     const btn = document.createElement("button");
     btn.textContent = "RACE!";
