@@ -91,13 +91,14 @@ const TRACK_OPTIONS = [
 type TrackName = typeof TRACK_OPTIONS[number]["name"];
 
 // Read track + car selections from URL params (set when switching tracks mid-session)
-function getUrlParams(): { trackIdx: number; carIdx: number | null } {
+function getUrlParams(): { trackIdx: number; carIdx: number | null; autostart: boolean } {
   const p = new URLSearchParams(location.search);
   const trackParam = p.get("track") ?? "";
   const carParam = p.get("car");
   const trackIdx = Math.max(0, TRACK_OPTIONS.findIndex((t) => t.name === trackParam));
   const carIdx = carParam !== null ? Math.max(0, Math.min(CAR_OPTIONS.length - 1, Number(carParam))) : null;
-  return { trackIdx, carIdx };
+  const autostart = p.has("autostart");
+  return { trackIdx, carIdx, autostart };
 }
 
 /** Navigate to the same page with updated track/car params — causes full reload (GPU textures swap). */
@@ -911,7 +912,7 @@ async function main() {
   });
 
   const playerInput = new CombinedInput(); // one instance for the session (avoid per-respawn listener leak)
-  let race: Race;
+  let race!: Race;
   function buildRace() {
     const angle = startHeading();
     const diffMult = selectedDifficulty === "easy" ? 0.72 : selectedDifficulty === "hard" ? 1.12 : 1.0;
@@ -946,6 +947,8 @@ async function main() {
     cam.cx = p.x; cam.cy = p.y;
   }
   buildRace();
+  // ?autostart — skip countdown; useful for headless automation testing
+  if (urlParams.autostart) { race.state = "running"; race.countdown = 0; }
 
   function tintFor(cfg: RacerConfig): Partial<Sprite> {
     return cfg.tint ? { r: cfg.tint[0], g: cfg.tint[1], b: cfg.tint[2] } : {};
@@ -1662,17 +1665,143 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Automation surface — exposes deterministic control for end-to-end testing.
+  // Usage in Chrome DevTools console or via chrome-devtools MCP evaluate_script.
+  // ---------------------------------------------------------------------------
   (window as unknown as { __pw: unknown }).__pw = {
+    // ---- state inspection ----
     get state() { return race.state; },
+    get countdown() { return race.countdown; },
     get pos() { return player().vehicle.pixelPos; },
     get speed() { return player().vehicle.speedKmh; },
     get playerPos() { return race.positionOf(player()); },
-    get standings() { return race.standings().map((r) => ({ name: r.name, dist: +r.lap.raceDistance.toFixed(2), lap: r.lap.displayLap, finished: r.lap.finished })); },
+    get standings() {
+      return race.standings().map((r) => ({
+        name: r.name,
+        isPlayer: r.isPlayer,
+        position: race.positionOf(r),
+        dist: +r.lap.raceDistance.toFixed(2),
+        lap: r.lap.displayLap,
+        finished: r.lap.finished,
+      }));
+    },
     get racers() { return race.racers; },
     get trackName() { return trackName; },
+
+    // ---- input injection ----
+    // direction: positive = left, negative = right (matches upstream GameInput convention)
+    setInput(opts: { throttle?: boolean; brake?: boolean; steerLeft?: boolean; steerRight?: boolean; direction?: number }) {
+      playerInput.override = {
+        accelerating: opts.throttle ?? false,
+        braking: opts.brake ?? false,
+        direction: opts.direction !== undefined
+          ? opts.direction
+          : opts.steerLeft ? 1 : opts.steerRight ? -1 : 0,
+      };
+    },
+    clearInput() { playerInput.override = null; },
+
+    // ---- physics fast-forward ----
+    // Runs n fixed physics steps (1/60 s each) synchronously without rAF.
+    // Useful for skipping time in tests without waiting for real-time.
+    stepN(n: number = 1) {
+      const DT = 1 / 60;
+      for (let i = 0; i < n; i++) stepper.advance(DT);
+    },
+
+    // ---- rich state snapshot ----
+    // Returns all observable state in one call for test assertions.
+    probe() {
+      const p = player();
+      return {
+        state: race.state,
+        countdown: race.countdown,
+        player: {
+          position: race.positionOf(p),
+          lap: p.lap.displayLap,
+          raceDistance: +p.lap.raceDistance.toFixed(2),
+          speed: +p.vehicle.speedKmh.toFixed(1),
+          x: +p.vehicle.pixelPos.x.toFixed(1),
+          y: +p.vehicle.pixelPos.y.toFixed(1),
+          finished: p.lap.finished,
+          heldBonus: race.bonusManager?.heldBonus(0) ?? null,
+        },
+        standings: race.standings().map((r) => ({
+          name: r.name,
+          isPlayer: r.isPlayer,
+          position: race.positionOf(r),
+          lap: r.lap.displayLap,
+          raceDistance: +r.lap.raceDistance.toFixed(2),
+          finished: r.lap.finished,
+        })),
+        inputOverride: playerInput.override,
+        trackName,
+      };
+    },
+
+    // ---- async helpers ----
+    // Resolves when race.state === target, rejects after timeoutMs.
+    waitForState(target: string, timeoutMs: number = 30000): Promise<void> {
+      return new Promise((resolve, reject) => {
+        if (race.state === target) { resolve(); return; }
+        const deadline = performance.now() + timeoutMs;
+        const tick = () => {
+          if (race.state === target) { resolve(); return; }
+          if (performance.now() > deadline) {
+            reject(new Error(`waitForState("${target}") timed out after ${timeoutMs}ms — current state: "${race.state}"`));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    },
+
+    // ---- race setup ----
+    // Bypass the menu and configure + launch a race programmatically.
+    // If track differs from the current loaded track, triggers a page reload
+    // (GPU textures are per-track; there's no in-page track swap).
+    // Otherwise rebuilds the race in-place.
+    startRace(opts: { track?: string; car?: number; difficulty?: "easy" | "medium" | "hard"; laps?: number; autostart?: boolean } = {}) {
+      if (opts.track) {
+        const newIdx = TRACK_OPTIONS.findIndex((t) => t.name === opts.track);
+        if (newIdx >= 0 && newIdx !== selectedTrackIdx) {
+          switchTrack(newIdx, opts.car ?? selectedCarIdx);
+          return; // page will reload
+        }
+      }
+      if (opts.car !== undefined) selectedCarIdx = opts.car;
+      if (opts.difficulty) selectedDifficulty = opts.difficulty;
+      if (opts.laps !== undefined) selectedLaps = opts.laps;
+      ROSTER = buildRoster(selectedCarIdx);
+      respawn();
+      if (opts.autostart !== false) { race.state = "running"; race.countdown = 0; }
+    },
+
+    // ---- AI control ----
+    // Switch the player car to AIPilot navigation (fully autonomous).
+    // Useful for end-to-end race tests that observe all racers completing.
+    useAI() {
+      const p = player();
+      p.input = undefined;
+      if (!p.ai) {
+        p.ai = new AIPilot(world, p.vehicle, p.lap, waypoints, track, () => false);
+      }
+    },
+    // Restore human/keyboard control (and input-override capability).
+    useHuman() {
+      const p = player();
+      p.input = playerInput;
+      p.ai = undefined;
+    },
+
+    // ---- shortcuts ----
     forceStart() { race.state = "running"; race.countdown = 0; },
     selectTrack(name: TrackName) { switchTrack(TRACK_OPTIONS.findIndex((t) => t.name === name), selectedCarIdx); },
     cam, track, GamePlay, respawn, lapTable, waypoints,
+    get TRACK_OPTIONS() { return TRACK_OPTIONS; },
+    get CAR_OPTIONS() { return CAR_OPTIONS; },
   };
 }
 
