@@ -1802,6 +1802,226 @@ async function main() {
     cam, track, GamePlay, respawn, lapTable, waypoints,
     get TRACK_OPTIONS() { return TRACK_OPTIONS; },
     get CAR_OPTIONS() { return CAR_OPTIONS; },
+
+    // ---- E2E automation suite ----
+    // Usage (Chrome DevTools or chrome-devtools MCP):
+    //   window.__pw.runE2E()
+    //   window.__pw.runE2E({ laps: 1, maxIter: 200 })
+    runE2E(opts: { laps?: number; maxIter?: number } = {}) {
+      const laps = opts.laps ?? 1;
+      const maxIter = opts.maxIter ?? 400; // 400 × stepN(300) = 2000 simulated seconds max
+      type Result = { name: string; pass: boolean; ms: number; detail?: string };
+      const results: Result[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pw = (window as any).__pw;
+
+      function test(name: string, fn: () => void) {
+        const t0 = performance.now();
+        try {
+          fn();
+          results.push({ name, pass: true, ms: Math.round(performance.now() - t0) });
+        } catch (e) {
+          results.push({ name, pass: false, ms: Math.round(performance.now() - t0), detail: String(e) });
+        }
+      }
+      function assert(cond: boolean, msg: string): asserts cond {
+        if (!cond) throw new Error(msg);
+      }
+
+      // T1 — API shape: all required __pw keys exist
+      test("api_shape", () => {
+        const required = [
+          "state", "probe", "stepN", "startRace", "useAI", "useHuman",
+          "setInput", "clearInput", "waitForState", "forceStart",
+          "standings", "TRACK_OPTIONS", "CAR_OPTIONS",
+        ];
+        for (const k of required) assert(k in pw, `Missing __pw.${k}`);
+      });
+
+      // T2 — probe() schema: all expected fields with correct types
+      test("probe_schema", () => {
+        pw.startRace({ laps });
+        const s = pw.probe();
+        assert(typeof s.state === "string", "state: string");
+        assert(typeof s.countdown === "number", "countdown: number");
+        assert(typeof s.player.x === "number", "player.x: number");
+        assert(typeof s.player.y === "number", "player.y: number");
+        assert(typeof s.player.speed === "number", "player.speed: number");
+        assert(typeof s.player.finished === "boolean", "player.finished: boolean");
+        assert(typeof s.player.raceDistance === "number", "player.raceDistance: number");
+        assert(typeof s.player.lap === "number", "player.lap: number");
+        assert(Array.isArray(s.standings), "standings: array");
+        assert(s.standings.length === 4, `4 racers, got ${s.standings.length}`);
+        assert(typeof s.trackName === "string", "trackName: string");
+      });
+
+      // T3 — stepN advances physics: car position changes after throttle + steps
+      test("stepN_advances_physics", () => {
+        pw.startRace({ laps });
+        pw.setInput({ throttle: true });
+        const before = pw.probe().player;
+        pw.stepN(120); // 2 simulated seconds
+        const after = pw.probe().player;
+        pw.clearInput();
+        const dist = Math.hypot(after.x - before.x, after.y - before.y);
+        assert(dist > 1, `Car didn't move (Δ${dist.toFixed(1)}px): (${before.x},${before.y})→(${after.x},${after.y})`);
+      });
+
+      // T4 — input injection: setInput / clearInput round-trip
+      test("input_cycle", () => {
+        pw.startRace({ laps });
+        assert(pw.probe().inputOverride === null, "override should be null before setInput");
+        pw.setInput({ throttle: true, direction: -0.5 });
+        const snap = pw.probe();
+        assert(snap.inputOverride !== null, "override should be set after setInput");
+        assert(snap.inputOverride.accelerating === true, "accelerating should be true");
+        assert(snap.inputOverride.direction === -0.5, "direction should be -0.5");
+        pw.clearInput();
+        assert(pw.probe().inputOverride === null, "override should be null after clearInput");
+      });
+
+      // T5 — AI race to completion (1 lap, stepN fast-forward)
+      test("ai_race_1lap", () => {
+        pw.startRace({ laps: 1 });
+        pw.useAI();
+        let iter = 0;
+        while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+        const s = pw.probe();
+        assert(s.state === "finished", `state=${s.state} after ${iter * 300} steps (dist=${s.player.raceDistance})`);
+        assert(s.player.finished, "player.finished not true");
+      });
+
+      // T6 — standings integrity: 4 racers with distinct positions 1–4, player finished
+      // Note: race ends when the *player* finishes; AI racers behind the player may not
+      // have finished === true yet — that's correct game behavior, not a bug.
+      test("standings_complete", () => {
+        const snap = pw.probe();
+        assert(snap.state === "finished", `Expected state=finished, got ${snap.state}`);
+        const standings = snap.standings as Array<{ name: string; position: number; finished: boolean; isPlayer: boolean }>;
+        assert(standings.length === 4, `Expected 4 racers, got ${standings.length}`);
+        const positions = standings.map((s) => s.position).sort((a, b) => a - b);
+        assert(JSON.stringify(positions) === "[1,2,3,4]", `Positions not 1–4: [${positions}]`);
+        const playerEntry = standings.find((s) => s.isPlayer);
+        assert(playerEntry !== undefined, "No player entry in standings");
+        assert(playerEntry!.finished, "Player should be finished");
+      });
+
+      // T7 — respawn resets race to initial state
+      test("respawn_resets", () => {
+        assert(pw.state === "finished", "should be finished entering respawn test");
+        pw.startRace({ laps: 1 });
+        const s = pw.probe();
+        assert(s.state === "running", `Expected running after startRace, got ${s.state}`);
+        assert(s.player.lap === 1, `Expected lap 1, got ${s.player.lap}`);
+        assert(!s.player.finished, "player.finished should be false after respawn");
+        assert(s.player.raceDistance < 1, `raceDistance should be ~0, got ${s.player.raceDistance}`);
+      });
+
+      // T8 — raceDistance is monotonically non-decreasing during AI run
+      test("race_distance_monotonic", () => {
+        pw.startRace({ laps: 1 });
+        pw.useAI();
+        let prevDist = 0;
+        let violations = 0;
+        for (let i = 0; i < 30 && pw.state === "running"; i++) {
+          pw.stepN(120);
+          const dist = pw.probe().player.raceDistance;
+          if (dist < prevDist - 2.0) violations++; // allow small rescue/respawn backward movement
+          prevDist = Math.max(prevDist, dist);
+        }
+        assert(prevDist > 5, `raceDistance never advanced past 5 (got ${prevDist.toFixed(2)})`);
+        assert(violations <= 2, `raceDistance went backward ${violations} times`);
+      });
+
+      // T9 — car options: expected vehicles are listed
+      test("car_options", () => {
+        const cars = pw.CAR_OPTIONS as Array<{ defId: string; label: string }>;
+        assert(Array.isArray(cars), "CAR_OPTIONS should be an array");
+        assert(cars.length >= 10, `Expected ≥10 cars, got ${cars.length}`);
+        const ids = new Set(cars.map((c) => c.defId));
+        for (const id of ["jeep", "police", "pickup", "roadster", "red"]) {
+          assert(ids.has(id), `Missing car: ${id}`);
+        }
+      });
+
+      // T10 — track options: all expected tracks are listed
+      test("track_options", () => {
+        const tracks = pw.TRACK_OPTIONS as Array<{ name: string; label: string }>;
+        assert(Array.isArray(tracks), "TRACK_OPTIONS should be an array");
+        assert(tracks.length >= 9, `Expected ≥9 tracks, got ${tracks.length}`);
+        const names = new Set(tracks.map((t) => t.name));
+        for (const n of ["race", "country", "snow2", "snow3", "flood", "river", "be", "city3", "tiny-sur-mer"]) {
+          assert(names.has(n), `Missing track: ${n}`);
+        }
+      });
+
+      // --- print summary ---
+      const passed = results.filter((r) => r.pass).length;
+      const failed = results.length - passed;
+      const score = `${passed}/${results.length}`;
+      console.log(`\n${"=".repeat(56)}`);
+      console.log(`  Pixel Wheels E2E — ${score} passed  (track: ${trackName})`);
+      console.log("=".repeat(56));
+      for (const r of results) {
+        const icon = r.pass ? "✓" : "✗";
+        const time = `${r.ms}ms`.padStart(6);
+        if (r.pass) {
+          console.log(`  ${icon} ${time}  ${r.name}`);
+        } else {
+          console.warn(`  ${icon} ${time}  ${r.name}`);
+          console.warn(`         ${r.detail}`);
+        }
+      }
+      console.log("=".repeat(56));
+      if (failed === 0) console.log(`  ALL TESTS PASSED`);
+      else console.error(`  ${failed} FAILED`);
+      console.log("=".repeat(56) + "\n");
+      return { passed, failed, total: results.length, score, results };
+    },
+
+    // ---- named scenario runner ----
+    // Usage: window.__pw.scenario("ai_3lap")
+    scenario(name: string, opts: { maxIter?: number } = {}) {
+      const maxIter = opts.maxIter ?? 600;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pw = (window as any).__pw;
+      const scenarios: Record<string, () => unknown> = {
+        // Full 3-lap race driven by AI
+        "ai_3lap": () => {
+          pw.startRace({ laps: 3 });
+          pw.useAI();
+          let iter = 0;
+          while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+          return pw.probe();
+        },
+        // 1-lap race with player on throttle only (will crash, demonstrates stepN)
+        "throttle_only": () => {
+          pw.startRace({ laps: 1 });
+          pw.setInput({ throttle: true });
+          pw.stepN(600);
+          const s = pw.probe();
+          pw.clearInput();
+          return s;
+        },
+        // Verify all 4 racers complete a 1-lap race
+        "all_finish": () => {
+          pw.startRace({ laps: 1 });
+          pw.useAI();
+          let iter = 0;
+          while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+          const snap = pw.probe();
+          const allDone = snap.standings.every((s: { finished: boolean }) => s.finished);
+          console.log(`All finished: ${allDone}  steps: ${iter * 300}  state: ${snap.state}`);
+          return snap;
+        },
+      };
+      if (!(name in scenarios)) {
+        console.error(`Unknown scenario "${name}". Available: ${Object.keys(scenarios).join(", ")}`);
+        return null;
+      }
+      console.log(`[scenario: ${name}]`);
+      return scenarios[name]();
+    },
   };
 }
 
