@@ -386,70 +386,102 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
       });
     }
 
-    // Car section label
     const carSectionLabel = document.createElement("div");
     carSectionLabel.textContent = "CAR";
-    carSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.4rem;";
+    carSectionLabel.style.cssText = "font-size:.7rem;letter-spacing:.2em;color:#666;margin-bottom:.5rem;";
 
-    // Car cards row (wrapping grid for 15 vehicles)
-    const carRow = document.createElement("div");
-    carRow.style.cssText = [
-      "display:flex", "flex-wrap:wrap", "gap:.8rem", "margin-bottom:1.4rem",
-      "max-width:900px", "justify-content:center",
+    // Carousel container
+    const carouselWrap = document.createElement("div");
+    carouselWrap.style.cssText = [
+      "display:flex", "align-items:center", "justify-content:center",
+      "gap:1.2rem", "margin-bottom:1.2rem", "min-width:340px",
     ].join(";");
 
-    function makeCard(i: number): HTMLDivElement {
-      const opt = CAR_OPTIONS[i];
-      const card = document.createElement("div");
-      const updateStyle = () => {
-        const active = selected === i;
-        card.style.cssText = [
-          "display:flex", "flex-direction:column", "align-items:center",
-          "gap:.4rem", "padding:.5rem .7rem",
-          "border-radius:10px", "cursor:pointer",
-          `border:2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.12)"}`,
-          `background:${active ? "rgba(255,215,0,0.10)" : "rgba(255,255,255,0.04)"}`,
-          "transition:border 0.12s,background 0.12s",
-          "min-width:80px",
-        ].join(";");
-      };
-      updateStyle();
-
-      const img = document.createElement("img");
-      img.src = `/assets/sprites/vehicles/${opt.defId}.png`;
-      img.style.cssText = [
-        "width:64px", "height:64px",
-        "image-rendering:pixelated",
-        "object-fit:contain",
+    function makeArrowBtn(label: string): HTMLButtonElement {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.style.cssText = [
+        "font-family:monospace","font-size:1.8rem","font-weight:900",
+        "background:none","border:none","color:#888","cursor:pointer",
+        "padding:.2rem .6rem","line-height:1",
+        "transition:color 0.12s",
       ].join(";");
-
-      const label = document.createElement("div");
-      label.textContent = opt.label;
-      label.style.cssText = [
-        "font-size:.85rem", "letter-spacing:.1em",
-        "color:#ddd", "margin-top:.2rem",
-      ].join(";");
-
-      card.appendChild(img);
-      card.appendChild(label);
-
-      card.addEventListener("click", () => {
-        selected = i;
-        cards.forEach((c, ci) => {
-          const active2 = selected === ci;
-          c.style.border = `2px solid ${active2 ? "#FFD700" : "rgba(255,255,255,0.12)"}`;
-          c.style.background = active2 ? "rgba(255,215,0,0.10)" : "rgba(255,255,255,0.04)";
-        });
-      });
-      card.addEventListener("dblclick", () => confirm());
-
-      // store updateStyle for later re-calls
-      (card as HTMLDivElement & { _updateStyle: () => void })._updateStyle = updateStyle;
-      return card;
+      b.addEventListener("mouseenter", () => b.style.color = "#FFD700");
+      b.addEventListener("mouseleave", () => b.style.color = "#888");
+      return b;
     }
 
-    const cards: HTMLDivElement[] = CAR_OPTIONS.map((_, i) => makeCard(i));
-    cards.forEach((c) => carRow.appendChild(c));
+    const prevBtn = makeArrowBtn("◀");
+    const nextBtn = makeArrowBtn("▶");
+
+    // Car display panel
+    const carPanel = document.createElement("div");
+    carPanel.style.cssText = [
+      "display:flex","flex-direction:column","align-items:center","gap:.6rem",
+      "width:160px",
+    ].join(";");
+
+    const carImgWrap = document.createElement("div");
+    carImgWrap.style.cssText = [
+      "width:120px","height:120px",
+      "display:flex","align-items:center","justify-content:center",
+      "background:rgba(255,255,255,0.04)","border-radius:14px",
+      "border:2px solid #FFD700",
+      "transition:border-color 0.12s",
+    ].join(";");
+
+    const carImg = document.createElement("img");
+    carImg.style.cssText = [
+      "max-width:96px","max-height:96px",
+      "image-rendering:pixelated","object-fit:contain",
+    ].join(";");
+
+    carImgWrap.appendChild(carImg);
+
+    const carNameEl = document.createElement("div");
+    carNameEl.style.cssText = [
+      "font-family:monospace","font-size:1rem","font-weight:bold",
+      "color:#FFD700","letter-spacing:.1em","text-align:center",
+    ].join(";");
+
+    // Dot row (one per car)
+    const dotsRow = document.createElement("div");
+    dotsRow.style.cssText = "display:flex;gap:.35rem;align-items:center;justify-content:center;margin-top:.1rem;";
+    const dots = CAR_OPTIONS.map((_) => {
+      const d = document.createElement("div");
+      d.style.cssText = "width:6px;height:6px;border-radius:50%;background:#333;transition:background 0.12s;";
+      return d;
+    });
+    dots.forEach(d => dotsRow.appendChild(d));
+
+    carPanel.appendChild(carImgWrap);
+    carPanel.appendChild(carNameEl);
+    carPanel.appendChild(dotsRow);
+
+    carouselWrap.appendChild(prevBtn);
+    carouselWrap.appendChild(carPanel);
+    carouselWrap.appendChild(nextBtn);
+
+    function refreshCarousel() {
+      const opt = CAR_OPTIONS[selected];
+      carImg.src = `/assets/sprites/vehicles/${opt.defId}.png`;
+      carNameEl.textContent = opt.label;
+      dots.forEach((d, di) => {
+        d.style.background = di === selected ? "#FFD700" : "#333";
+      });
+    }
+    refreshCarousel();
+
+    prevBtn.addEventListener("click", () => {
+      selected = (selected + CAR_OPTIONS.length - 1) % CAR_OPTIONS.length;
+      refreshCarousel();
+    });
+    nextBtn.addEventListener("click", () => {
+      selected = (selected + 1) % CAR_OPTIONS.length;
+      refreshCarousel();
+    });
+
+    carImgWrap.addEventListener("dblclick", () => confirm());
 
     // RACE button
     const btn = document.createElement("button");
@@ -479,10 +511,10 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
         selected = (selected + CAR_OPTIONS.length - 1) % CAR_OPTIONS.length;
-        refreshCards();
+        refreshCarousel();
       } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
         selected = (selected + 1) % CAR_OPTIONS.length;
-        refreshCards();
+        refreshCarousel();
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         confirm();
@@ -490,14 +522,6 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
         selectedTrack = (selectedTrack + 1) % TRACK_OPTIONS.length;
         refreshTrackBtns();
       }
-    }
-
-    function refreshCards() {
-      cards.forEach((c, ci) => {
-        const active = selected === ci;
-        c.style.border = `2px solid ${active ? "#FFD700" : "rgba(255,255,255,0.12)"}`;
-        c.style.background = active ? "rgba(255,215,0,0.10)" : "rgba(255,255,255,0.04)";
-      });
     }
 
     window.addEventListener("keydown", onKey);
@@ -523,7 +547,7 @@ function showMenu(initialTrackIdx: number, initialCarIdx: number): Promise<{ mod
     overlay.appendChild(lapSectionLabel);
     overlay.appendChild(lapRow);
     overlay.appendChild(carSectionLabel);
-    overlay.appendChild(carRow);
+    overlay.appendChild(carouselWrap);
     overlay.appendChild(btn);
     overlay.appendChild(hint);
     document.body.appendChild(overlay);
