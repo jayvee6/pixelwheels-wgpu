@@ -71,11 +71,15 @@ export class GamepadInput {
 }
 
 export class CombinedInput {
+  /** When non-null, automation override: returned as-is, bypassing keyboard and gamepad. */
+  override: GameInput | null = null;
+
   private keyboard = new KeyboardInput();
   private gamepad  = new GamepadInput();
 
   /** Sample once per fixed step. Gamepad takes priority when any axis/button is active. */
   sample(): GameInput {
+    if (this.override) return this.override;
     const gp = this.gamepad.sample();
     if (gp.accelerating || gp.braking || gp.direction !== 0) return gp;
     return this.keyboard.sample();

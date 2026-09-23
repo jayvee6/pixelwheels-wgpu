@@ -91,13 +91,14 @@ const TRACK_OPTIONS = [
 type TrackName = typeof TRACK_OPTIONS[number]["name"];
 
 // Read track + car selections from URL params (set when switching tracks mid-session)
-function getUrlParams(): { trackIdx: number; carIdx: number | null } {
+function getUrlParams(): { trackIdx: number; carIdx: number | null; autostart: boolean } {
   const p = new URLSearchParams(location.search);
   const trackParam = p.get("track") ?? "";
   const carParam = p.get("car");
   const trackIdx = Math.max(0, TRACK_OPTIONS.findIndex((t) => t.name === trackParam));
   const carIdx = carParam !== null ? Math.max(0, Math.min(CAR_OPTIONS.length - 1, Number(carParam))) : null;
-  return { trackIdx, carIdx };
+  const autostart = p.has("autostart");
+  return { trackIdx, carIdx, autostart };
 }
 
 /** Navigate to the same page with updated track/car params — causes full reload (GPU textures swap). */
@@ -911,7 +912,7 @@ async function main() {
   });
 
   const playerInput = new CombinedInput(); // one instance for the session (avoid per-respawn listener leak)
-  let race: Race;
+  let race!: Race;
   function buildRace() {
     const angle = startHeading();
     const diffMult = selectedDifficulty === "easy" ? 0.72 : selectedDifficulty === "hard" ? 1.12 : 1.0;
@@ -946,6 +947,8 @@ async function main() {
     cam.cx = p.x; cam.cy = p.y;
   }
   buildRace();
+  // ?autostart — skip countdown; useful for headless automation testing
+  if (urlParams.autostart) { race.state = "running"; race.countdown = 0; }
 
   function tintFor(cfg: RacerConfig): Partial<Sprite> {
     return cfg.tint ? { r: cfg.tint[0], g: cfg.tint[1], b: cfg.tint[2] } : {};
@@ -1662,17 +1665,363 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Automation surface — exposes deterministic control for end-to-end testing.
+  // Usage in Chrome DevTools console or via chrome-devtools MCP evaluate_script.
+  // ---------------------------------------------------------------------------
   (window as unknown as { __pw: unknown }).__pw = {
+    // ---- state inspection ----
     get state() { return race.state; },
+    get countdown() { return race.countdown; },
     get pos() { return player().vehicle.pixelPos; },
     get speed() { return player().vehicle.speedKmh; },
     get playerPos() { return race.positionOf(player()); },
-    get standings() { return race.standings().map((r) => ({ name: r.name, dist: +r.lap.raceDistance.toFixed(2), lap: r.lap.displayLap, finished: r.lap.finished })); },
+    get standings() {
+      return race.standings().map((r) => ({
+        name: r.name,
+        isPlayer: r.isPlayer,
+        position: race.positionOf(r),
+        dist: +r.lap.raceDistance.toFixed(2),
+        lap: r.lap.displayLap,
+        finished: r.lap.finished,
+      }));
+    },
     get racers() { return race.racers; },
     get trackName() { return trackName; },
+
+    // ---- input injection ----
+    // direction: positive = left, negative = right (matches upstream GameInput convention)
+    setInput(opts: { throttle?: boolean; brake?: boolean; steerLeft?: boolean; steerRight?: boolean; direction?: number }) {
+      playerInput.override = {
+        accelerating: opts.throttle ?? false,
+        braking: opts.brake ?? false,
+        direction: opts.direction !== undefined
+          ? opts.direction
+          : opts.steerLeft ? 1 : opts.steerRight ? -1 : 0,
+      };
+    },
+    clearInput() { playerInput.override = null; },
+
+    // ---- physics fast-forward ----
+    // Runs n fixed physics steps (1/60 s each) synchronously without rAF.
+    // Useful for skipping time in tests without waiting for real-time.
+    stepN(n: number = 1) {
+      const DT = 1 / 60;
+      for (let i = 0; i < n; i++) stepper.advance(DT);
+    },
+
+    // ---- rich state snapshot ----
+    // Returns all observable state in one call for test assertions.
+    probe() {
+      const p = player();
+      return {
+        state: race.state,
+        countdown: race.countdown,
+        player: {
+          position: race.positionOf(p),
+          lap: p.lap.displayLap,
+          raceDistance: +p.lap.raceDistance.toFixed(2),
+          speed: +p.vehicle.speedKmh.toFixed(1),
+          x: +p.vehicle.pixelPos.x.toFixed(1),
+          y: +p.vehicle.pixelPos.y.toFixed(1),
+          finished: p.lap.finished,
+          heldBonus: race.bonusManager?.heldBonus(0) ?? null,
+        },
+        standings: race.standings().map((r) => ({
+          name: r.name,
+          isPlayer: r.isPlayer,
+          position: race.positionOf(r),
+          lap: r.lap.displayLap,
+          raceDistance: +r.lap.raceDistance.toFixed(2),
+          finished: r.lap.finished,
+        })),
+        inputOverride: playerInput.override,
+        trackName,
+      };
+    },
+
+    // ---- async helpers ----
+    // Resolves when race.state === target, rejects after timeoutMs.
+    waitForState(target: string, timeoutMs: number = 30000): Promise<void> {
+      return new Promise((resolve, reject) => {
+        if (race.state === target) { resolve(); return; }
+        const deadline = performance.now() + timeoutMs;
+        const tick = () => {
+          if (race.state === target) { resolve(); return; }
+          if (performance.now() > deadline) {
+            reject(new Error(`waitForState("${target}") timed out after ${timeoutMs}ms — current state: "${race.state}"`));
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    },
+
+    // ---- race setup ----
+    // Bypass the menu and configure + launch a race programmatically.
+    // If track differs from the current loaded track, triggers a page reload
+    // (GPU textures are per-track; there's no in-page track swap).
+    // Otherwise rebuilds the race in-place.
+    startRace(opts: { track?: string; car?: number; difficulty?: "easy" | "medium" | "hard"; laps?: number; autostart?: boolean } = {}) {
+      if (opts.track) {
+        const newIdx = TRACK_OPTIONS.findIndex((t) => t.name === opts.track);
+        if (newIdx >= 0 && newIdx !== selectedTrackIdx) {
+          switchTrack(newIdx, opts.car ?? selectedCarIdx);
+          return; // page will reload
+        }
+      }
+      if (opts.car !== undefined) selectedCarIdx = opts.car;
+      if (opts.difficulty) selectedDifficulty = opts.difficulty;
+      if (opts.laps !== undefined) selectedLaps = opts.laps;
+      ROSTER = buildRoster(selectedCarIdx);
+      respawn();
+      if (opts.autostart !== false) { race.state = "running"; race.countdown = 0; }
+    },
+
+    // ---- AI control ----
+    // Switch the player car to AIPilot navigation (fully autonomous).
+    // Useful for end-to-end race tests that observe all racers completing.
+    useAI() {
+      const p = player();
+      p.input = undefined;
+      if (!p.ai) {
+        p.ai = new AIPilot(world, p.vehicle, p.lap, waypoints, track, () => false);
+      }
+    },
+    // Restore human/keyboard control (and input-override capability).
+    useHuman() {
+      const p = player();
+      p.input = playerInput;
+      p.ai = undefined;
+    },
+
+    // ---- shortcuts ----
     forceStart() { race.state = "running"; race.countdown = 0; },
     selectTrack(name: TrackName) { switchTrack(TRACK_OPTIONS.findIndex((t) => t.name === name), selectedCarIdx); },
     cam, track, GamePlay, respawn, lapTable, waypoints,
+    get TRACK_OPTIONS() { return TRACK_OPTIONS; },
+    get CAR_OPTIONS() { return CAR_OPTIONS; },
+
+    // ---- E2E automation suite ----
+    // Usage (Chrome DevTools or chrome-devtools MCP):
+    //   window.__pw.runE2E()
+    //   window.__pw.runE2E({ laps: 1, maxIter: 200 })
+    runE2E(opts: { laps?: number; maxIter?: number } = {}) {
+      const laps = opts.laps ?? 1;
+      const maxIter = opts.maxIter ?? 400; // 400 × stepN(300) = 2000 simulated seconds max
+      type Result = { name: string; pass: boolean; ms: number; detail?: string };
+      const results: Result[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pw = (window as any).__pw;
+
+      function test(name: string, fn: () => void) {
+        const t0 = performance.now();
+        try {
+          fn();
+          results.push({ name, pass: true, ms: Math.round(performance.now() - t0) });
+        } catch (e) {
+          results.push({ name, pass: false, ms: Math.round(performance.now() - t0), detail: String(e) });
+        }
+      }
+      function assert(cond: boolean, msg: string): asserts cond {
+        if (!cond) throw new Error(msg);
+      }
+
+      // T1 — API shape: all required __pw keys exist
+      test("api_shape", () => {
+        const required = [
+          "state", "probe", "stepN", "startRace", "useAI", "useHuman",
+          "setInput", "clearInput", "waitForState", "forceStart",
+          "standings", "TRACK_OPTIONS", "CAR_OPTIONS",
+        ];
+        for (const k of required) assert(k in pw, `Missing __pw.${k}`);
+      });
+
+      // T2 — probe() schema: all expected fields with correct types
+      test("probe_schema", () => {
+        pw.startRace({ laps });
+        const s = pw.probe();
+        assert(typeof s.state === "string", "state: string");
+        assert(typeof s.countdown === "number", "countdown: number");
+        assert(typeof s.player.x === "number", "player.x: number");
+        assert(typeof s.player.y === "number", "player.y: number");
+        assert(typeof s.player.speed === "number", "player.speed: number");
+        assert(typeof s.player.finished === "boolean", "player.finished: boolean");
+        assert(typeof s.player.raceDistance === "number", "player.raceDistance: number");
+        assert(typeof s.player.lap === "number", "player.lap: number");
+        assert(Array.isArray(s.standings), "standings: array");
+        assert(s.standings.length === 4, `4 racers, got ${s.standings.length}`);
+        assert(typeof s.trackName === "string", "trackName: string");
+      });
+
+      // T3 — stepN advances physics: car position changes after throttle + steps
+      test("stepN_advances_physics", () => {
+        pw.startRace({ laps });
+        pw.setInput({ throttle: true });
+        const before = pw.probe().player;
+        pw.stepN(120); // 2 simulated seconds
+        const after = pw.probe().player;
+        pw.clearInput();
+        const dist = Math.hypot(after.x - before.x, after.y - before.y);
+        assert(dist > 1, `Car didn't move (Δ${dist.toFixed(1)}px): (${before.x},${before.y})→(${after.x},${after.y})`);
+      });
+
+      // T4 — input injection: setInput / clearInput round-trip
+      test("input_cycle", () => {
+        pw.startRace({ laps });
+        assert(pw.probe().inputOverride === null, "override should be null before setInput");
+        pw.setInput({ throttle: true, direction: -0.5 });
+        const snap = pw.probe();
+        assert(snap.inputOverride !== null, "override should be set after setInput");
+        assert(snap.inputOverride.accelerating === true, "accelerating should be true");
+        assert(snap.inputOverride.direction === -0.5, "direction should be -0.5");
+        pw.clearInput();
+        assert(pw.probe().inputOverride === null, "override should be null after clearInput");
+      });
+
+      // T5 — AI race to completion (1 lap, stepN fast-forward)
+      test("ai_race_1lap", () => {
+        pw.startRace({ laps: 1 });
+        pw.useAI();
+        let iter = 0;
+        while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+        const s = pw.probe();
+        assert(s.state === "finished", `state=${s.state} after ${iter * 300} steps (dist=${s.player.raceDistance})`);
+        assert(s.player.finished, "player.finished not true");
+      });
+
+      // T6 — standings integrity: 4 racers with distinct positions 1–4, player finished
+      // Note: race ends when the *player* finishes; AI racers behind the player may not
+      // have finished === true yet — that's correct game behavior, not a bug.
+      test("standings_complete", () => {
+        const snap = pw.probe();
+        assert(snap.state === "finished", `Expected state=finished, got ${snap.state}`);
+        const standings = snap.standings as Array<{ name: string; position: number; finished: boolean; isPlayer: boolean }>;
+        assert(standings.length === 4, `Expected 4 racers, got ${standings.length}`);
+        const positions = standings.map((s) => s.position).sort((a, b) => a - b);
+        assert(JSON.stringify(positions) === "[1,2,3,4]", `Positions not 1–4: [${positions}]`);
+        const playerEntry = standings.find((s) => s.isPlayer);
+        assert(playerEntry !== undefined, "No player entry in standings");
+        assert(playerEntry!.finished, "Player should be finished");
+      });
+
+      // T7 — respawn resets race to initial state
+      test("respawn_resets", () => {
+        assert(pw.state === "finished", "should be finished entering respawn test");
+        pw.startRace({ laps: 1 });
+        const s = pw.probe();
+        assert(s.state === "running", `Expected running after startRace, got ${s.state}`);
+        assert(s.player.lap === 1, `Expected lap 1, got ${s.player.lap}`);
+        assert(!s.player.finished, "player.finished should be false after respawn");
+        assert(s.player.raceDistance < 1, `raceDistance should be ~0, got ${s.player.raceDistance}`);
+      });
+
+      // T8 — raceDistance is monotonically non-decreasing during AI run
+      test("race_distance_monotonic", () => {
+        pw.startRace({ laps: 1 });
+        pw.useAI();
+        let prevDist = 0;
+        let violations = 0;
+        for (let i = 0; i < 30 && pw.state === "running"; i++) {
+          pw.stepN(120);
+          const dist = pw.probe().player.raceDistance;
+          if (dist < prevDist - 2.0) violations++; // allow small rescue/respawn backward movement
+          prevDist = Math.max(prevDist, dist);
+        }
+        assert(prevDist > 5, `raceDistance never advanced past 5 (got ${prevDist.toFixed(2)})`);
+        assert(violations <= 2, `raceDistance went backward ${violations} times`);
+      });
+
+      // T9 — car options: expected vehicles are listed
+      test("car_options", () => {
+        const cars = pw.CAR_OPTIONS as Array<{ defId: string; label: string }>;
+        assert(Array.isArray(cars), "CAR_OPTIONS should be an array");
+        assert(cars.length >= 10, `Expected ≥10 cars, got ${cars.length}`);
+        const ids = new Set(cars.map((c) => c.defId));
+        for (const id of ["jeep", "police", "pickup", "roadster", "red"]) {
+          assert(ids.has(id), `Missing car: ${id}`);
+        }
+      });
+
+      // T10 — track options: all expected tracks are listed
+      test("track_options", () => {
+        const tracks = pw.TRACK_OPTIONS as Array<{ name: string; label: string }>;
+        assert(Array.isArray(tracks), "TRACK_OPTIONS should be an array");
+        assert(tracks.length >= 9, `Expected ≥9 tracks, got ${tracks.length}`);
+        const names = new Set(tracks.map((t) => t.name));
+        for (const n of ["race", "country", "snow2", "snow3", "flood", "river", "be", "city3", "tiny-sur-mer"]) {
+          assert(names.has(n), `Missing track: ${n}`);
+        }
+      });
+
+      // --- print summary ---
+      const passed = results.filter((r) => r.pass).length;
+      const failed = results.length - passed;
+      const score = `${passed}/${results.length}`;
+      console.log(`\n${"=".repeat(56)}`);
+      console.log(`  Pixel Wheels E2E — ${score} passed  (track: ${trackName})`);
+      console.log("=".repeat(56));
+      for (const r of results) {
+        const icon = r.pass ? "✓" : "✗";
+        const time = `${r.ms}ms`.padStart(6);
+        if (r.pass) {
+          console.log(`  ${icon} ${time}  ${r.name}`);
+        } else {
+          console.warn(`  ${icon} ${time}  ${r.name}`);
+          console.warn(`         ${r.detail}`);
+        }
+      }
+      console.log("=".repeat(56));
+      if (failed === 0) console.log(`  ALL TESTS PASSED`);
+      else console.error(`  ${failed} FAILED`);
+      console.log("=".repeat(56) + "\n");
+      return { passed, failed, total: results.length, score, results };
+    },
+
+    // ---- named scenario runner ----
+    // Usage: window.__pw.scenario("ai_3lap")
+    scenario(name: string, opts: { maxIter?: number } = {}) {
+      const maxIter = opts.maxIter ?? 600;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pw = (window as any).__pw;
+      const scenarios: Record<string, () => unknown> = {
+        // Full 3-lap race driven by AI
+        "ai_3lap": () => {
+          pw.startRace({ laps: 3 });
+          pw.useAI();
+          let iter = 0;
+          while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+          return pw.probe();
+        },
+        // 1-lap race with player on throttle only (will crash, demonstrates stepN)
+        "throttle_only": () => {
+          pw.startRace({ laps: 1 });
+          pw.setInput({ throttle: true });
+          pw.stepN(600);
+          const s = pw.probe();
+          pw.clearInput();
+          return s;
+        },
+        // Verify all 4 racers complete a 1-lap race
+        "all_finish": () => {
+          pw.startRace({ laps: 1 });
+          pw.useAI();
+          let iter = 0;
+          while (pw.state === "running" && iter < maxIter) { pw.stepN(300); iter++; }
+          const snap = pw.probe();
+          const allDone = snap.standings.every((s: { finished: boolean }) => s.finished);
+          console.log(`All finished: ${allDone}  steps: ${iter * 300}  state: ${snap.state}`);
+          return snap;
+        },
+      };
+      if (!(name in scenarios)) {
+        console.error(`Unknown scenario "${name}". Available: ${Object.keys(scenarios).join(", ")}`);
+        return null;
+      }
+      console.log(`[scenario: ${name}]`);
+      return scenarios[name]();
+    },
   };
 }
 

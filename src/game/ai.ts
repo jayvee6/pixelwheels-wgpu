@@ -26,6 +26,12 @@ function wallBetween(world: World, ax: number, ay: number, bx: number, by: numbe
 const MIN_NORMAL_SPEED = 8 / 3.6; // m/s — 8 km/h converted; below this = potentially stuck
 const MAX_BLOCKED_DURATION = 1.2; // s below MIN_NORMAL_SPEED before declaring stuck
 const MAX_REVERSE_DURATION = 0.8; // s of reverse to escape a wedge
+// Hard-rescue: if raceDistance doesn't advance by MIN_PROGRESS within HARD_RESCUE_THRESHOLD
+// seconds, jump ahead to a waypoint. Catches multi-car deadlocks in narrow sections where the
+// block/reverse cycle oscillates speed but never escapes (speedKmh briefly > 0 during reverse).
+const HARD_RESCUE_THRESHOLD = 4.0;  // simulated seconds without meaningful forward progress
+const HARD_RESCUE_MIN_PROGRESS = 0.3; // raceDistance units that count as "making progress"
+const HARD_RESCUE_WAYPOINTS_AHEAD = 5; // waypoints to jump forward on rescue
 // Pulled from GamePlay so the eval sweep can search it (PARAM_aiLookAheadWaypoints)
 
 function normalizeAngleDeg(a: number): number {
@@ -38,6 +44,9 @@ export class AIPilot {
   private state: "normal" | "blocked" = "normal";
   private blockedDuration = 0;
   private reverseDuration = 0;
+  // Hard-rescue state: track elapsed time without forward raceDistance progress.
+  private hardStuckTime = 0;
+  private hardStuckBaseDist = -1; // raceDistance snapshot when timer last reset
 
   constructor(
     private world: World,
@@ -49,6 +58,29 @@ export class AIPilot {
   ) {}
 
   act(dt: number, running: boolean) {
+    // Hard-rescue: if raceDistance doesn't advance by MIN_PROGRESS within HARD_RESCUE_THRESHOLD
+    // seconds, teleport ahead. Tracks progress not speed, so the block/reverse oscillation
+    // (which briefly pushes speed above 0 going backward) doesn't reset the timer.
+    if (running) {
+      const curDist = this.lap.raceDistance;
+      if (this.hardStuckBaseDist < 0) this.hardStuckBaseDist = curDist;
+      if (curDist - this.hardStuckBaseDist >= HARD_RESCUE_MIN_PROGRESS) {
+        // Made real forward progress — reset
+        this.hardStuckTime = 0;
+        this.hardStuckBaseDist = curDist;
+      } else {
+        this.hardStuckTime += dt;
+        if (this.hardStuckTime >= HARD_RESCUE_THRESHOLD) {
+          this.hardRescue();
+          this.hardStuckTime = 0;
+          this.hardStuckBaseDist = -1;
+          this.state = "normal";
+          this.blockedDuration = 0;
+          return;
+        }
+      }
+    }
+
     if (this.state === "blocked") { this.actBlocked(dt); return; }
 
     // accelerate (with a limiter if this AI is ahead of every player)
@@ -64,6 +96,26 @@ export class AIPilot {
     } else {
       this.blockedDuration = 0;
     }
+  }
+
+  private hardRescue() {
+    const nextIdx = this.store.getWaypointIndex(this.lap.lapDistance);
+    let idx = nextIdx;
+    for (let i = 0; i < HARD_RESCUE_WAYPOINTS_AHEAD; i++) idx = this.store.getNextIndex(idx);
+    const dest = this.store.getWaypoint(idx);
+    const tx = dest.x * UNIT_FOR_PIXEL, ty = dest.y * UNIT_FOR_PIXEL;
+    // Compute translation delta so wheels move with the body
+    const bodyPos = this.vehicle.body.getPosition();
+    const dx = tx - bodyPos.x, dy = ty - bodyPos.y;
+    for (const wh of this.vehicle.wheels) {
+      const wp = wh.body.getPosition();
+      wh.body.setPosition(new Vec2(wp.x + dx, wp.y + dy));
+      wh.body.setLinearVelocity(new Vec2(0, 0));
+      wh.body.setAngularVelocity(0);
+    }
+    this.vehicle.body.setPosition(new Vec2(tx, ty));
+    this.vehicle.body.setLinearVelocity(new Vec2(0, 0));
+    this.vehicle.body.setAngularVelocity(0);
   }
 
   private actBlocked(dt: number) {
