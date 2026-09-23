@@ -23,6 +23,10 @@ function wallBetween(world: World, ax: number, ay: number, bx: number, by: numbe
   return hit;
 }
 
+let _rescueCount = 0;
+export function getRescueCount() { return _rescueCount; }
+export function resetRescueCount() { _rescueCount = 0; }
+
 const MIN_NORMAL_SPEED = 8 / 3.6; // m/s — 8 km/h converted; below this = potentially stuck
 const MAX_BLOCKED_DURATION = 1.2; // s below MIN_NORMAL_SPEED before declaring stuck
 const MAX_REVERSE_DURATION = 0.8; // s of reverse to escape a wedge
@@ -64,7 +68,12 @@ export class AIPilot {
     if (running) {
       const curDist = this.lap.raceDistance;
       if (this.hardStuckBaseDist < 0) this.hardStuckBaseDist = curDist;
-      if (curDist - this.hardStuckBaseDist >= HARD_RESCUE_MIN_PROGRESS) {
+      const delta = curDist - this.hardStuckBaseDist;
+      if (delta < -5.0) {
+        // Lap wrap: raceDistance reset to start of new lap — don't count as stuck, just re-anchor.
+        this.hardStuckTime = 0;
+        this.hardStuckBaseDist = curDist;
+      } else if (delta >= HARD_RESCUE_MIN_PROGRESS) {
         // Made real forward progress — reset
         this.hardStuckTime = 0;
         this.hardStuckBaseDist = curDist;
@@ -99,23 +108,47 @@ export class AIPilot {
   }
 
   private hardRescue() {
-    const nextIdx = this.store.getWaypointIndex(this.lap.lapDistance);
+    _rescueCount++;
+    const curDist = this.lap.lapDistance;
+    const nextIdx = this.store.getWaypointIndex(curDist);
+    // When the car is past all sorted waypoints (nextIdx wraps to 0), the target will have a
+    // LOWER lapDistance than current — it's on the other side of the finish line. Allow this
+    // case and suppress the backward-cheat guard instead of bailing.
+    const pastAllWaypoints = nextIdx === 0 && this.store.count > 0 &&
+      curDist > this.store.getWaypointLapDistance(this.store.count - 1);
     let idx = nextIdx;
-    for (let i = 0; i < HARD_RESCUE_WAYPOINTS_AHEAD; i++) idx = this.store.getNextIndex(idx);
+    for (let i = 0; i < HARD_RESCUE_WAYPOINTS_AHEAD; i++) {
+      const next = this.store.getNextIndex(idx);
+      // Stop before wrapping the circular waypoint array — except in the pastAllWaypoints case
+      // where nextIdx is already 0 and all advances are safe forward steps.
+      if (next <= nextIdx && !pastAllWaypoints) break;
+      idx = next;
+    }
+    const targetLapDist = this.store.getWaypointLapDistance(idx);
+    // Safety: bail if the target is behind us — UNLESS we're past all waypoints, where the
+    // target is naturally lower (cross-finish-line rescue). In that case always proceed.
+    if (!pastAllWaypoints && targetLapDist <= curDist) return;
+    // Always suppress the LapTracker backward-cheat guard: rescue teleports that jump section
+    // boundaries aren't cheating and shouldn't decrement lapCount.
+    this.lap.skipNextBackwardGuard();
     const dest = this.store.getWaypoint(idx);
     const tx = dest.x * UNIT_FOR_PIXEL, ty = dest.y * UNIT_FOR_PIXEL;
     // Compute translation delta so wheels move with the body
     const bodyPos = this.vehicle.body.getPosition();
     const dx = tx - bodyPos.x, dy = ty - bodyPos.y;
+    // Face the rescue destination so the car doesn't start wedged into a wall.
+    const newAngle = Math.atan2(ty - bodyPos.y, tx - bodyPos.x);
     for (const wh of this.vehicle.wheels) {
       const wp = wh.body.getPosition();
       wh.body.setPosition(new Vec2(wp.x + dx, wp.y + dy));
       wh.body.setLinearVelocity(new Vec2(0, 0));
       wh.body.setAngularVelocity(0);
+      wh.body.setAngle(newAngle);
     }
     this.vehicle.body.setPosition(new Vec2(tx, ty));
     this.vehicle.body.setLinearVelocity(new Vec2(0, 0));
     this.vehicle.body.setAngularVelocity(0);
+    this.vehicle.body.setAngle(newAngle);
   }
 
   private actBlocked(dt: number) {
@@ -156,11 +189,19 @@ export class AIPilot {
     const store = this.store;
     if (store.count === 0) return null;
     const car = this.vehicle.pixelPos;
-    const nextIdx = store.getWaypointIndex(this.lap.lapDistance);
+    const lapDist = this.lap.lapDistance;
+    const nextIdx = store.getWaypointIndex(lapDist);
+    // When the car is past ALL sorted waypoints (getWaypointIndex wraps to 0), limit look-ahead
+    // to 1. Without this, the AI scores wp[4] higher than wp[0] and aims at a waypoint whose
+    // pixel coordinates are deep inside the track, causing the car to drive backward through
+    // sections to reach it. Aiming at just wp[0] (physically just past the finish line) keeps
+    // the car going forward across the finish line.
+    const pastAllWaypoints = nextIdx === 0 && lapDist > store.getWaypointLapDistance(store.count - 1);
+    const lookAhead = pastAllWaypoints ? 1 : GamePlay.aiLookAheadWaypoints;
     let index = store.getPreviousIndex(nextIdx);
     let bestScore = -Infinity;
     let best: { x: number; y: number } | null = null;
-    for (let i = -1; i < GamePlay.aiLookAheadWaypoints; i++, index = store.getNextIndex(index)) {
+    for (let i = -1; i < lookAhead; i++, index = store.getNextIndex(index)) {
       const wp = store.getWaypoint(index);
       if (wallBetween(this.world, car.x, car.y, wp.x, wp.y)) continue; // can't see it → skip
       const mat = getMaterialAt(this.track, wp.x, wp.y);

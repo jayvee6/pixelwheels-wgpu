@@ -117,9 +117,14 @@ for (let m; (m = tileRe.exec(tsx)); ) {
 }
 
 // ---- object layers ----
+// Normalize self-closing objectgroup tags before regex matching. Tags like
+// <objectgroup name="Obstacles"/> would otherwise be parsed as opening tags (the `/`
+// lands in the attribute capture and `>` acts as the opener), causing the lazy body
+// match to consume the next real group's content and lose it.
+const tmxNorm = tmx.replace(/<objectgroup\b([^>]*)\/>/g, "<objectgroup$1></objectgroup>");
 const objectGroups = {};
 const ogRe = /<objectgroup\b([^>]*)>([\s\S]*?)<\/objectgroup>/g;
-for (let m; (m = ogRe.exec(tmx)); ) {
+for (let m; (m = ogRe.exec(tmxNorm)); ) {
   const name = attr(m[1], "name");
   if (!name) continue;
   const objs = [];

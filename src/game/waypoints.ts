@@ -16,10 +16,14 @@ export class WaypointStore {
       const pos = table.get(ax, ay);
       this.pts.push({ x: ax, y: ay, lapDistance: pos ? pos.lapDistance : 0 });
     }
+    // getWaypointIndex() binary-searches ascending lapDistance; sort to guarantee that order
+    // regardless of how waypoints are ordered in the TMX polyline.
+    this.pts.sort((a, b) => a.lapDistance - b.lapDistance);
   }
 
   get count(): number { return this.pts.length; }
   getWaypoint(i: number): { x: number; y: number } { return this.pts[i]; }
+  getWaypointLapDistance(i: number): number { return this.pts[i].lapDistance; }
   getPreviousIndex(i: number): number { return (i > 0 ? i : this.pts.length) - 1; }
   getNextIndex(i: number): number { return (i + 1) % this.pts.length; }
 

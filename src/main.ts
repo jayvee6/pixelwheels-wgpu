@@ -13,7 +13,7 @@ import { createWorld, FixedStepper } from "./game/physics.ts";
 import { createTrackBodies } from "./game/trackbody.ts";
 import { LapPositionTable, LapTracker } from "./game/lap.ts";
 import { WaypointStore } from "./game/waypoints.ts";
-import { AIPilot } from "./game/ai.ts";
+import { AIPilot, getRescueCount, resetRescueCount } from "./game/ai.ts";
 import { Race, type Racer } from "./game/race.ts";
 import { Vehicle, type VehicleDef } from "./game/vehicle.ts";
 import { CombinedInput } from "./game/input.ts";
@@ -1799,6 +1799,8 @@ async function main() {
     // ---- shortcuts ----
     forceStart() { race.state = "running"; race.countdown = 0; },
     selectTrack(name: TrackName) { switchTrack(TRACK_OPTIONS.findIndex((t) => t.name === name), selectedCarIdx); },
+    get rescueCount() { return getRescueCount(); },
+    resetRescueCount() { resetRescueCount(); },
     cam, track, GamePlay, respawn, lapTable, waypoints,
     get TRACK_OPTIONS() { return TRACK_OPTIONS; },
     get CAR_OPTIONS() { return CAR_OPTIONS; },

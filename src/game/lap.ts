@@ -161,6 +161,11 @@ export class LapTracker {
   lapDistance = 0; // sectionId + progress, for ranking
   private sectionId = -1;
   private skipNextFinishLine = true;
+  private ignoreNextBackward = false;
+
+  /** Call before a rescue teleport to suppress the backward-cheat guard for the next update.
+   *  Rescue teleports that jump sections forward aren't cheating — they're recovery. */
+  skipNextBackwardGuard() { this.ignoreNextBackward = true; }
 
   constructor(private table: LapPositionTable, public readonly totalLaps = 3) {}
 
@@ -191,8 +196,12 @@ export class LapTracker {
         this.status = "completed";
       }
     } else if (crossedBackward) {
-      this.lapCount = Math.max(0, this.lapCount - 1);
-      this.skipNextFinishLine = true;
+      if (this.ignoreNextBackward) {
+        this.ignoreNextBackward = false;
+      } else {
+        this.lapCount = Math.max(0, this.lapCount - 1);
+        this.skipNextFinishLine = true;
+      }
     }
   }
 
