@@ -8,3 +8,4 @@ dist/
 public/assets/maps/*.png
 .cache/
 .vercel
+.env*
